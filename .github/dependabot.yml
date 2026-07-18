@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Single entry at the workspace root — pnpm-lock.yaml here covers every
+  # workspace package (apps/*, packages/*); Dependabot resolves the whole
+  # pnpm workspace from this one lockfile, no per-package entry needed.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      nestjs:
+        patterns:
+          - "@nestjs/*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
