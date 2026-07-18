@@ -1,0 +1,15 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+overrides:
+  multer: ^2.2.0
+  lodash: ^4.17.24
+  qs: ^6.15.2
+  uuid: ^11.1.1
+allowBuilds:
+  '@firebase/util': set this to true or false
+  '@nestjs/core': true
+  argon2: true
+  better-sqlite3: true
+  electron: true
+  protobufjs: set this to true or false

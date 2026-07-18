@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '11.10.0'
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm run lint
+      - name: Typecheck
+        run: pnpm run typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nestora
+          POSTGRES_PASSWORD: nestora
+          POSTGRES_DB: society_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nestora -d society_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # DATABASE_URL is what the running app (and every e2e test's real HTTP
+      # requests) connects as — app_write_role, RLS-restricted, same as
+      # every other environment. MIGRATION_DATABASE_URL is the owning role,
+      # used only by `migration:run`/`seed`/`keys:generate` and by
+      # test/admin-datasource.ts's fixture setup. Conflating the two here
+      # would silently make CI stop exercising RLS at all, even though local
+      # dev enforces it — see KNOWN_GAPS.md's now-resolved RLS entry.
+      DATABASE_URL: postgres://app_write_role:app_write_role_ci_password@localhost:5432/society_ci
+      MIGRATION_DATABASE_URL: postgres://nestora:nestora@localhost:5432/society_ci
+      REDIS_URL: redis://localhost:6379
+      JWT_PRIVATE_KEY_PATH: keys/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: keys/jwt-public.pem
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate dev JWT keypair
+        working-directory: apps/api
+        run: pnpm run keys:generate
+      - name: Create app_write_role
+        # GitHub Actions' `services:` Postgres container has no
+        # docker-entrypoint-initdb.d equivalent (that's a docker-compose-only
+        # mount) — same role, same migration-time GRANTs
+        # (1700000000019-AppWriteRoleGrants.ts) still apply, only the
+        # CREATE ROLE step itself needs restating here.
+        run: |
+          psql "postgres://nestora:nestora@localhost:5432/society_ci" -c "
+            DO \$\$
+            BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_write_role') THEN
+                CREATE ROLE app_write_role LOGIN PASSWORD 'app_write_role_ci_password';
+              END IF;
+            END
+            \$\$;
+          "
+      - name: Run migrations
+        working-directory: apps/api
+        run: pnpm run migration:run
+      - name: Unit tests
+        working-directory: apps/api
+        run: pnpm run test
+      - name: Integration tests
+        working-directory: apps/api
+        run: pnpm run test:e2e
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build all apps
+        run: pnpm run build

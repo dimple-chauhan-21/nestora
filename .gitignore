@@ -1,0 +1,34 @@
+# Environment files — every .env variant except the checked-in example template
+.env
+.env.*
+!.env.example
+
+node_modules/
+dist/
+.next/
+out/
+build/
+coverage/
+.turbo/
+*.log
+.DS_Store
+*.sqlite
+*.sqlite3
+.pnpm-store/
+*.tsbuildinfo
+
+# RS256 JWT dev keypair — generated locally via `pnpm --filter @nestora/api run keys:generate`, never committed
+apps/api/keys/
+
+# Terraform local state/cache — any module, not just infra/terraform
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+
+# Local Claude Code settings — machine/user-specific permission allowlists
+# that can accumulate real secrets from past command history (found a live
+# JWT + FCM device token in here during this repo's initial secret scan).
+# Already covered by this machine's global git excludes, but that's
+# per-machine, not per-repo — don't rely on it for anyone else who clones this.
+.claude/
