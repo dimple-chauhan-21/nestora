@@ -7,9 +7,13 @@ overrides:
   qs: ^6.15.2
   uuid: ^11.1.1
 allowBuilds:
-  '@firebase/util': set this to true or false
+  # @firebase/util and protobufjs are transitive deps of firebase-admin
+  # (FcmNotificationProvider) — both left as unresolved placeholders
+  # previously, which pnpm tolerates against a warm local store but
+  # rejects outright under --frozen-lockfile with no store cache (CI).
+  '@firebase/util': true
   '@nestjs/core': true
   argon2: true
   better-sqlite3: true
   electron: true
-  protobufjs: set this to true or false
+  protobufjs: true
