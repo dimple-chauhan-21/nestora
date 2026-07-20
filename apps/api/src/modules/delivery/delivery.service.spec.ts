@@ -12,6 +12,12 @@ import type { Clock } from '../../common/clock';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
 import { sha256Hex } from '../auth/util/hash.util';
 
+function extractOtp(message: string): string {
+  const otp = message.match(/code is (\d{4,6})/)?.[1];
+  if (!otp) throw new Error(`No OTP found in message: ${message}`);
+  return otp;
+}
+
 /** Minimal in-memory Repository<T> stand-in — only the methods DeliveryService actually calls. */
 class FakeRepo<T extends { id: string }> {
   rows: T[] = [];
@@ -162,11 +168,10 @@ describe('DeliveryService — OTP handover flow', () => {
 
     const delivery = await createTestDelivery(ctx);
     const smsBody = ctx.sentSms[0]?.message ?? '';
-    const otp = smsBody.match(/code is (\d{4,6})/)?.[1];
-    expect(otp).toBeDefined();
-    otpCapture.push(otp!);
+    const otp = extractOtp(smsBody);
+    otpCapture.push(otp);
 
-    const result = await ctx.service.verifyOtp(delivery.id, { otp: otp! }, GUARD_SCOPE, guardUserId);
+    const result = await ctx.service.verifyOtp(delivery.id, { otp }, GUARD_SCOPE, guardUserId);
     expect(result).toEqual({ verified: true });
 
     const stored = await ctx.deliveries.findOne({ where: { id: delivery.id } });
@@ -193,7 +198,7 @@ describe('DeliveryService — OTP handover flow', () => {
     const ctx = buildService();
     const delivery = await createTestDelivery(ctx);
     const smsBody = ctx.sentSms[0]?.message ?? '';
-    const otp = smsBody.match(/code is (\d{4,6})/)?.[1]!;
+    const otp = extractOtp(smsBody);
 
     // Advance the shared clock past the 10-minute expiry window.
     ctx.clock.advance(11 * 60 * 1000);
@@ -209,7 +214,7 @@ describe('DeliveryService — OTP handover flow', () => {
     const ctx = buildService();
     const delivery = await createTestDelivery(ctx);
     const smsBody = ctx.sentSms[0]?.message ?? '';
-    const otp = smsBody.match(/code is (\d{4,6})/)?.[1]!;
+    const otp = extractOtp(smsBody);
 
     for (let i = 0; i < DELIVERY_OTP_MAX_ATTEMPTS; i++) {
       const r = await ctx.service.verifyOtp(delivery.id, { otp: '111111' }, GUARD_SCOPE, guardUserId);
@@ -236,7 +241,7 @@ describe('DeliveryService.updateStatus — handover requires proof (OTP or expli
     const ctx = buildService();
     const delivery = await createTestDelivery(ctx);
     const smsBody = ctx.sentSms[0]?.message ?? '';
-    const otp = smsBody.match(/code is (\d{4,6})/)?.[1]!;
+    const otp = extractOtp(smsBody);
     await ctx.service.verifyOtp(delivery.id, { otp }, GUARD_SCOPE, guardUserId);
 
     const updated = await ctx.service.updateStatus(delivery.id, { status: 'handed_over' }, GUARD_SCOPE, guardUserId);
@@ -286,8 +291,8 @@ describe('DeliveryService — one OTP per delivery, not per flat', () => {
       guardUserId,
     );
 
-    const firstOtp = (ctx.sentSms[0]?.message ?? '').match(/code is (\d{4,6})/)?.[1]!;
-    const secondOtp = (ctx.sentSms[1]?.message ?? '').match(/code is (\d{4,6})/)?.[1]!;
+    const firstOtp = extractOtp(ctx.sentSms[0]?.message ?? '');
+    const secondOtp = extractOtp(ctx.sentSms[1]?.message ?? '');
     expect(firstOtp).toBeDefined();
     expect(secondOtp).toBeDefined();
 
@@ -314,7 +319,7 @@ describe('DeliveryService — hashing sanity', () => {
     const delivery = await createTestDelivery(ctx);
     const stored = await ctx.deliveries.findOne({ where: { id: delivery.id } });
     const smsBody = ctx.sentSms[0]?.message ?? '';
-    const otp = smsBody.match(/code is (\d{4,6})/)?.[1]!;
+    const otp = extractOtp(smsBody);
 
     expect(stored?.otpHash).toBe(sha256Hex(otp));
     expect(stored?.otpHash).not.toBe(otp);

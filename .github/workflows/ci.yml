@@ -100,6 +100,13 @@ jobs:
       - name: Run migrations
         working-directory: apps/api
         run: pnpm run migration:run
+      - name: Seed roles & permissions
+        # Every e2e suite resolves roles by code (roles.findOneOrFail({
+        # where: { code: 'flat_owner' } }), etc.) — without this, every
+        # e2e test fails with EntityNotFoundError before it even gets to
+        # what it's actually testing.
+        working-directory: apps/api
+        run: pnpm run seed
       - name: Unit tests
         working-directory: apps/api
         run: pnpm run test
