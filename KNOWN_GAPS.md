@@ -473,3 +473,37 @@ plugin found) from which the actual incremental development history could
 be recovered. What exists now is the best-available organization of the
 final state, not a recovery of the original timeline.
 
+**Follow-up, same session: pushed to a real GitHub remote and CI verified
+for real** — `git init` alone doesn't prove anything runs; a remote push
+that actually triggers `.github/workflows/ci.yml` on GitHub's own
+infrastructure does. That remote (`github.com/dimple-chauhan-21/nestora`)
+was created by the user and pushed to, and the first four CI runs against
+it **failed for real, genuine reasons never visible on this single dev
+machine** — each fixed in turn rather than worked around:
+1. `actions/checkout@v4`/`setup-node@v4`/`pnpm/action-setup@v4` are
+   EOL/deprecated on GitHub's runners → bumped to current majors.
+2. `packageManager: pnpm@11.10.0` requires Node ≥22.13; CI was pinned to
+   Node 20 (this dev machine runs Node 25, masking it entirely) → CI bumped
+   to Node 22, `package.json`'s `engines.node` corrected from the
+   too-loose `>=20` to the real `>=22.13`.
+3. `pnpm-workspace.yaml`'s `allowBuilds` had `@firebase/util` and
+   `protobufjs` (transitive `firebase-admin` deps) left as the literal
+   placeholder string `"set this to true or false"` — silently tolerated
+   against a warm local pnpm store, hard-rejected by a clean
+   `--frozen-lockfile` CI install → both approved `true`.
+4. Two genuine pre-existing bugs, invisible because lint had never once
+   run in CI before this session: 6× `@typescript-eslint/no-non-null-
+   asserted-optional-chain` in `delivery.service.spec.ts`, and one
+   `no-unused-vars` in `domestic-staff.service.ts` where the shared ESLint
+   config only ignored `^_`-prefixed function args, not `^_`-prefixed
+   variables — plus a structurally missing "run the seed script" step in
+   `ci.yml` itself, without which every e2e suite failed on
+   `EntityNotFoundError` looking up seeded roles (this bug predates this
+   session; CI had simply never run for real before to surface it).
+
+**Real, verified-green result**: commit `6d1f2bf`, GitHub Actions run
+[29723182193](https://github.com/dimple-chauhan-21/nestora/actions/runs/29723182193)
+— `lint-and-typecheck`, `test` (77/77 unit + 51/51 e2e across 13 suites
+each), and `build` all `conclusion: success`, confirmed via the GitHub
+REST API against the real run, not a local replay of the same commands.
+
