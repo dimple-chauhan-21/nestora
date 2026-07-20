@@ -6,6 +6,12 @@ overrides:
   lodash: ^4.17.24
   qs: ^6.15.2
   uuid: ^11.1.1
+  # All three below are transitive via @nestjs/cli (devDependency, build
+  # tooling only — never bundled into the running API) — patch-level
+  # bumps within the same major line, not a breaking change.
+  glob: ^10.5.0
+  picomatch: ^4.0.4
+  tmp: ^0.2.6
 allowBuilds:
   # @firebase/util and protobufjs are transitive deps of firebase-admin
   # (FcmNotificationProvider) — both left as unresolved placeholders

@@ -295,52 +295,100 @@ it (SSRF risk if that's ever added).
 
 ## Dependency vulnerabilities not fixed this session (deferred, with reason)
 
-**Status**: open, triaged during the security-review session (2026-07-19).
-`pnpm audit` went from 54 findings (17 high) to 44 (12 high) this session —
-see below for what was fixed vs. deliberately left open, and
-`.github/dependabot.yml` (new) so this stops being a one-time check.
+**Status**: open, triaged during the security-review session (2026-07-19),
+re-audited during the dependency-follow-up session (2026-07-20) after the
+Node/pnpm version-control fixes. `pnpm audit` history: 54 findings (17 high)
+→ 44 (12 high) after the security-review session → **39 (9 high, 0
+critical)** after this session. See below for what was fixed vs.
+deliberately left open, and `.github/dependabot.yml` + the repo's
+"Dependabot security updates"/vulnerability-alerts settings (both
+confirmed actually enabled this session, not just the yaml file existing).
 
-**Fixed this session** (pnpm-workspace.yaml `overrides`, same-major-line
-patch/minor bumps, verified via full unit+e2e re-run): `multer` 2.0.2→2.2.0
-(5 HIGH DoS advisories — directly relevant, this is the package behind the
-one real upload endpoint this session touched), `lodash` →^4.17.24 (1 HIGH
-code-injection + 2 MODERATE prototype-pollution, via `@nestjs/config`), `qs`
-→^6.15.2 (1 MODERATE DoS, via `body-parser`/`express`), `uuid` →^11.1.1 (1
-MODERATE buffer-bounds issue, via `@nestjs/typeorm`/`@nestjs/schedule`/
-`firebase-admin`'s dependency chain).
+**Fixed the security-review session** (pnpm-workspace.yaml `overrides`,
+same-major-line patch/minor bumps, verified via full unit+e2e re-run):
+`multer` 2.0.2→2.2.0 (5 HIGH DoS advisories — directly relevant, this is
+the package behind the one real upload endpoint that session touched),
+`lodash` →^4.17.24 (1 HIGH code-injection + 2 MODERATE
+prototype-pollution, via `@nestjs/config`), `qs` →^6.15.2 (1 MODERATE DoS,
+via `body-parser`/`express`), `uuid` →^11.1.1 (1 MODERATE buffer-bounds
+issue, via `@nestjs/typeorm`/`@nestjs/schedule`/`firebase-admin`'s
+dependency chain).
 
-**Deliberately NOT fixed, with reason**:
-- **`@nestjs/core` (MODERATE, GHSA-36xv-jgw5-4q75)**: patched only in
-  `>=11.1.18` — this repo runs the entire `@nestjs/*` v10.x line (10.4.22).
-  Fixing this means a NestJS v10→v11 major-version migration across every
-  module in the codebase, not a version-range override — a dedicated,
-  tested upgrade effort, not a security-review side-fix. Tracked here so
-  it isn't lost, not silently ignored.
-- **`file-type` (MODERATE, transitive via `@nestjs/common`)**: patched
-  version is a major bump (20.x→21.x) for a package this codebase never
-  calls directly — only `@nestjs/common`'s own internals use it, for a
-  purpose unrelated to any endpoint this app exposes. Forcing the override
-  risks breaking `@nestjs/common` internals in a way this session couldn't
-  fully verify; low real exploitability (requires a malformed ASF/ZIP
-  reaching a parser this app doesn't route user input through).
-- **`glob`/`picomatch`/`ajv`/`tmp`/`webpack` (mixed HIGH/MODERATE/LOW,
-  all via `@nestjs/cli`/`@angular-devkit`)**: devDependency-only, part of
-  the Nest CLI's own build tooling — never bundled into the running API,
-  never reachable from a deployed server. Real risk is limited to a
-  compromised dev machine or CI runner, not production.
-- **`electron` (mixed severity, `apps/desktop`)**: the guard-kiosk desktop
-  app is still Phase-0 scaffold (per CLAUDE.md's module build order, not
-  yet reached) — no shipped build exists for these advisories to affect
-  yet, but bump `electron` before that app is ever packaged for real use.
-- **`next` (mixed severity, `apps/web`)**: same reasoning — `apps/web` is
-  still Phase-0 scaffold, not a deployed frontend yet. Bump before it is.
+**Fixed this session** (same `overrides` pattern, all three transitive via
+`@nestjs/cli`, a devDependency never bundled into the running API — patch
+bumps within the same major line, verified via full unit+e2e re-run):
+`glob` →^10.5.0 (1 HIGH — command injection via `-c`/`--cmd` executing
+matches with `shell:true`, in the CLI's own glob tool, not reachable from
+any HTTP request), `picomatch` →^4.0.4 (1 HIGH ReDoS via extglob
+quantifiers + 1 MODERATE POSIX-class method injection, transitive via
+`@angular-devkit`), `tmp` →^0.2.6 (1 HIGH path traversal via unsanitized
+prefix/postfix enabling directory escape + 1 LOW symlink-based arbitrary
+write, transitive via `@nestjs/cli`'s interactive-prompt dependency
+`external-editor`). Total: 44→39 findings, HIGH 12→9.
 
-**To close the rest of this gap**: schedule the NestJS v10→v11 migration as
-its own tracked piece of work (not a drive-by fix); re-run `pnpm audit`
-before packaging `apps/desktop` or deploying `apps/web` for the first time
-and resolve whatever's current at that point, since these numbers will have
-moved on by then. Dependabot (`.github/dependabot.yml`) will now surface new
-findings weekly going forward instead of this being a one-time snapshot.
+**Remaining 9 HIGH, all in already-identified Phase-0-scaffold direct
+dependencies, deliberately NOT bumped — both require a major version and
+could break real functionality**:
+- **`next` (5 HIGH: DoS via Server Components ×3, SSRF via WebSocket
+  upgrades, Middleware/Proxy i18n bypass — plus 7 MODERATE, 2 LOW)**:
+  14.2.35 → needs ≥15.5.16, a 14→15 major bump (App Router/config-format
+  changes are common breakage points). `apps/web` is still Phase-0
+  scaffold (CLAUDE.md's module order — not yet reached), so nothing is
+  deployed for these to affect yet, but bump before any real frontend work
+  starts on it, not silently as a side-effect of an unrelated session.
+- **`electron` (4 HIGH: use-after-free in offscreen paint callback,
+  fullscreen/pointer-lock/keyboard-lock permission callbacks, and
+  PowerMonitor; plus a command-line-switch injection — plus 10 MODERATE, 4
+  LOW)**: 33.4.11 → needs ≥38.8.6/39.8.1 depending on the specific CVE, a
+  33→39 major bump spanning 6 major versions. `apps/desktop` is still
+  Phase-0 scaffold, no shipped kiosk build exists yet — same reasoning,
+  bump before packaging it for real use, not as a drive-by here.
+
+**Also still deliberately open** (both MODERATE, both require a NestJS
+v10→v11 major migration or an unrelated-major bump — same reasoning as
+before, unchanged this session):
+- **`@nestjs/core`** (GHSA-36xv-jgw5-4q75, patched only in `>=11.1.18` —
+  this repo runs the entire `@nestjs/*` v10.x line).
+- **`file-type`** (transitive via `@nestjs/common`, patched version is a
+  major bump 20.x→21.x, for a package this codebase never calls directly).
+- **`ajv`/`webpack`** (MODERATE/LOW, transitive via `@nestjs/cli`'s Angular
+  DevKit chain — devDependency-only, same posture as the three fixed this
+  session, but their available fixes require a major bump of
+  `@angular-devkit`/`@nestjs/schematics` rather than a same-line patch, so
+  left open rather than risking the CLI's build tooling).
+- **`postcss`** (MODERATE, transitive via `next`>`postcss` — same-family
+  fix would follow whenever `next` itself is bumped, not separately).
+
+**Remaining total after this session's fixes**: 39 findings — 0 critical,
+9 high (all `next`/`electron`, both already-tracked Phase-0-scaffold
+majors above), 22 moderate, 8 low. Zero of the remaining findings are in
+a runtime dependency of `apps/api` that executes in a real request path —
+`@nestjs/core`/`file-type` are the closest (both MODERATE, both genuinely
+in the API's dependency tree), everything else is either devDependency
+build tooling or an unshipped scaffold app.
+
+**Dependabot, confirmed actually working end-to-end this session, not
+just "the yaml exists"**: `.github/dependabot.yml`'s `directory: "/"`
+entries have no explicit `target-branch`, so they default to the repo's
+real default branch — confirmed via the GitHub API (`default_branch:
+"main"`), which matches. The repo-level "Dependabot security updates" and
+"Dependabot alerts" toggles were confirmed OFF (`security_and_analysis.
+dependabot_security_updates.status: "disabled"`, `vulnerability-alerts`
+endpoint 404) despite the yaml file existing — a real gap between "a
+config file exists" and "GitHub will actually act on it" — both enabled
+via the API this session (`PUT .../vulnerability-alerts`,
+`PUT .../automated-security-fixes`, both `204`, re-verified `enabled`
+afterward). Scheduled version-update PRs (from `dependabot.yml`) and
+advisory-driven security PRs (from the now-enabled toggle) will both
+target `main` going forward.
+
+**To close the rest of this gap**: schedule the NestJS v10→v11 migration
+as its own tracked piece of work (not a drive-by fix); bump `next` and
+`electron` to their patched majors as their own tracked pieces of work
+before either app leaves Phase-0 scaffold status, verifying each
+separately rather than bundling both major bumps together. Re-run `pnpm
+audit` at that point rather than trusting these exact numbers, since
+Dependabot will have already moved some of them on its own by then.
 
 ## No encryption at rest anywhere — neither for file storage nor sensitive PII columns
 
