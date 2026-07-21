@@ -3,6 +3,18 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 /**
+ * better-sqlite3 here is intentionally pinned to a different major than
+ * apps/api's own copy (which also imports it, in test/offline-sync.e2e-spec.ts,
+ * to simulate this queue under plain Node). Electron's bundled V8 requires
+ * a newer better-sqlite3 (12.x) than apps/api's Node runtime needs (11.x
+ * still works fine there) — keeping the version strings different forces
+ * pnpm to give each app its own physical native build, so `electron-rebuild`
+ * recompiling this copy for Electron's ABI can never corrupt apps/api's
+ * copy, which runs under plain Node. Do not "helpfully" sync these to the
+ * same version without re-verifying this reasoning still holds.
+ */
+
+/**
  * Local SQLite-backed offline queue. Guard-kiosk gate operations (check-in/
  * check-out) write here first when the API is unreachable, and sync to the
  * real gate endpoints on reconnect.

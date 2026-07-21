@@ -23,3 +23,6 @@ allowBuilds:
   better-sqlite3: true
   electron: true
   protobufjs: true
+  # sharp is Next.js 15's native image-optimization dependency — needed
+  # for `next build`'s image pipeline, same posture as the others above.
+  sharp: true
