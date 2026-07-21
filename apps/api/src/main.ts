@@ -9,6 +9,7 @@ import 'dotenv/config';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -24,8 +25,24 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  // Not exhaustive yet (per SRS §9.16 — grows module-by-module) — accurate
+  // for what's decorated so far, starting with auth, since packages/types'
+  // generated client (see packages/types/scripts/generate-client.ts) reads
+  // this spec directly and a wrong/missing shape there is worse than an
+  // incomplete one.
+  const openApiConfig = new DocumentBuilder()
+    .setTitle('Nestora API')
+    .setDescription('Society Management Platform — auto-generated from NestJS decorators, not hand-maintained')
+    .setVersion('0.1.0')
+    .addBearerAuth()
+    .build();
+  const openApiDocument = SwaggerModule.createDocument(app, openApiConfig);
+  SwaggerModule.setup('api/docs', app, openApiDocument);
+
   const port = process.env.PORT ?? 4000;
   await app.listen(port);
   console.log(`[api] listening on :${port}`);
+  console.log(`[api] OpenAPI docs at :${port}/api/docs (raw spec: /api/docs-json)`);
 }
 bootstrap();

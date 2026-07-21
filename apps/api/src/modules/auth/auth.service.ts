@@ -9,6 +9,7 @@ import { PasswordService } from './password.service';
 import { PermissionsService } from './permissions.service';
 import { LoginAuditService } from './login-audit.service';
 import type { AccessTokenPayload, AuthenticatedUser } from './types/authenticated-user.type';
+import type { MeResponseDto } from './dto/me-response.dto';
 
 const OTP_REQUEST_LIMIT = 5;
 const OTP_REQUEST_WINDOW_SECONDS = 60 * 60;
@@ -150,7 +151,7 @@ export class AuthService {
     }
   }
 
-  async me(userId: string): Promise<{ user: Partial<User>; roles: string[]; permissions: string[] }> {
+  async me(userId: string): Promise<MeResponseDto> {
     const user = await this.users.findOneOrFail({ where: { id: userId } });
     const access = await this.permissionsService.resolve(userId);
     return {

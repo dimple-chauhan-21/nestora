@@ -19,6 +19,11 @@ allowBuilds:
   # rejects outright under --frozen-lockfile with no store cache (CI).
   '@firebase/util': true
   '@nestjs/core': true
+  # @scarf/scarf (via swagger-ui-dist -> @nestjs/swagger) is an install-time
+  # analytics/telemetry postinstall, not a native build step — unlike
+  # everything else in this list, there's no functional reason to run it.
+  # Denied, not approved.
+  '@scarf/scarf': false
   argon2: true
   better-sqlite3: true
   electron: true
