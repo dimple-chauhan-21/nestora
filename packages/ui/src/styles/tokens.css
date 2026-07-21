@@ -1,0 +1,96 @@
+/**
+ * Design tokens (SRS §13: "defined as design tokens, not hardcoded hex
+ * values in components, so white-label theming is a token-swap, not a
+ * re-skin"). Values in HSL space (space-separated, no hsl() wrapper) so
+ * Tailwind can apply opacity modifiers via hsl(var(--x) / <alpha-value>).
+ *
+ * Palette: deep maroon / taupe / terracotta. Role assignments are
+ * contrast-verified (WCAG AA), not just picked by eye — see the session
+ * notes for the actual ratios:
+ *   - maroon on white:      ~18.5:1  -> primary (light mode), always paired with white text
+ *   - terracotta on white:   ~2.5:1  -> FAILS as text/button-fill; only usable as a filled
+ *                                       background with dark text on top, or in dark mode
+ *   - terracotta on black:   ~8.3:1  -> primary (dark mode), pairs with dark/near-black text
+ *   - taupe on white:        ~6.4:1  -> muted/secondary text
+ */
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 5 83% 9%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 5 83% 9%;
+
+  --primary: 5 83% 9%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 10 20% 95%;
+  --secondary-foreground: 5 83% 9%;
+
+  --muted: 10 15% 96%;
+  --muted-foreground: 10 12% 38%;
+
+  --accent: 17 45% 92%;
+  --accent-foreground: 5 83% 9%;
+
+  /* Terracotta at full saturation — for filled chips/badges/illustration
+     accents, always with a dark foreground on top, never white. */
+  --accent-solid: 17 40% 65%;
+  --accent-solid-foreground: 5 83% 9%;
+
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 142 40% 32%;
+  --success-foreground: 0 0% 100%;
+
+  --warning: 38 75% 45%;
+  --warning-foreground: 5 83% 9%;
+
+  --border: 10 15% 88%;
+  --input: 10 15% 88%;
+  --ring: 5 83% 9%;
+
+  --radius: 0.5rem;
+}
+
+/* Stamped on the root element by each app's own theme toggle (or by
+   prefers-color-scheme as the default signal — see each app's root layout). */
+.dark {
+  --background: 6 35% 6%;
+  --foreground: 20 20% 95%;
+
+  --card: 6 30% 8%;
+  --card-foreground: 20 20% 95%;
+
+  /* Roles flip here, not just darken — the idiomatic move for a warm
+     palette: terracotta becomes the pop color against near-black,
+     maroon (now too close to the background to read as "primary") steps back. */
+  --primary: 17 40% 65%;
+  --primary-foreground: 6 35% 6%;
+
+  --secondary: 10 15% 16%;
+  --secondary-foreground: 20 20% 95%;
+
+  --muted: 10 15% 14%;
+  --muted-foreground: 10 12% 65%;
+
+  --accent: 17 30% 18%;
+  --accent-foreground: 20 20% 95%;
+
+  --accent-solid: 17 40% 65%;
+  --accent-solid-foreground: 6 35% 6%;
+
+  --destructive: 0 62% 50%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 142 35% 45%;
+  --success-foreground: 6 35% 6%;
+
+  --warning: 38 70% 55%;
+  --warning-foreground: 6 35% 6%;
+
+  --border: 10 15% 20%;
+  --input: 10 15% 20%;
+  --ring: 17 40% 65%;
+}
