@@ -26,9 +26,11 @@ type Step = 'phone' | 'otp' | 'authenticated';
  * Placeholder guard-login: same OTP flow as apps/web's /login, reusing
  * packages/ui. Real guard auth (§5.3/§1) is PIN/biometric — this proves
  * the desktop app can hit the real API and persist a session, nothing
- * more. See session-store.ts for why JWT storage here is a plain
- * userData-dir JSON file rather than an httpOnly cookie (no browser, no
- * cookie jar, and a different threat model than a public website).
+ * more. See session-store.ts for how/why JWT storage here differs from
+ * apps/web's httpOnly cookie: no browser, no cookie jar, but a kiosk's
+ * physical accessibility means the session file itself needs to be
+ * OS-keychain-encrypted (Electron's safeStorage), not just kept off the
+ * DOM the way a cookie already is.
  */
 export function App() {
   const [step, setStep] = useState<Step>('phone');
@@ -113,8 +115,13 @@ export function App() {
       const meResult = await fetchMe(body.accessToken);
       setMe(meResult);
       setStep('authenticated');
-    } catch {
-      setError('Network error — is the API reachable?');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(
+        message.includes('safeStorage')
+          ? 'Could not securely store the session on this device. Contact IT.'
+          : 'Network error — is the API reachable?',
+      );
     } finally {
       setLoading(false);
     }
