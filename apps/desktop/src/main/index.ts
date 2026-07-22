@@ -1,10 +1,18 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { openOfflineQueue, getDefaultQueuePath, enqueue, listUnsynced } from './offline-queue';
 import { syncQueue } from './sync';
+import { getSessionPath, readSession, writeSession, clearSession, type StoredSession } from './session-store';
 
 let queueDb: Database.Database | null = null;
+
+function registerSessionIpc(): void {
+  const sessionPath = getSessionPath(app.getPath('userData'));
+  ipcMain.handle('session:get', () => readSession(sessionPath));
+  ipcMain.handle('session:set', (_event, session: StoredSession) => writeSession(sessionPath, session));
+  ipcMain.handle('session:clear', () => clearSession(sessionPath));
+}
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -18,6 +26,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  registerSessionIpc();
+
   queueDb = openOfflineQueue(getDefaultQueuePath());
   enqueue(queueDb, 'app.boot', { at: new Date().toISOString() });
   const pending = listUnsynced(queueDb);

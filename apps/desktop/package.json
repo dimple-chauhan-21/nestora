@@ -5,27 +5,35 @@
   "main": "dist/main/index.js",
   "scripts": {
     "rebuild:native": "node scripts/rebuild-native.js",
-    "dev": "npm run build && npm run rebuild:native && electron .",
+    "dev": "npm run build:renderer && npm run build && npm run rebuild:native && electron .",
     "build": "tsc -p tsconfig.json",
+    "build:renderer": "vite build",
     "lint": "eslint . --max-warnings 0",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p src/renderer --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@nestora/api-client": "workspace:*",
     "@nestora/types": "workspace:*",
     "@nestora/ui": "workspace:*",
-    "better-sqlite3": "^12.11.1"
+    "better-sqlite3": "^12.11.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@nestora/config": "workspace:*",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^20.16.0",
     "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^6.0.3",
+    "autoprefixer": "^10.4.20",
     "electron": "^39.8.10",
     "node-gyp": "^13.0.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
     "typescript": "^5.6.0",
+    "vite": "^8.1.5",
     "eslint": "^9.15.0"
   }
 }

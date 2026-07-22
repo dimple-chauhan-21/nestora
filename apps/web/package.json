@@ -11,12 +11,14 @@
     "clean": "rm -rf .next"
   },
   "dependencies": {
+    "@nestora/api-client": "workspace:*",
     "@nestora/types": "workspace:*",
     "@nestora/ui": "workspace:*",
     "@nestora/utils": "workspace:*",
     "next": "^15.5.20",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@nestora/config": "workspace:*",

@@ -1,0 +1,7 @@
+{
+  "extends": "@nestora/config/tsconfig.react-library.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["."]
+}

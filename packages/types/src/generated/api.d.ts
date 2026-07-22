@@ -1438,8 +1438,8 @@ export interface components {
         };
         MeUserDto: {
             id: string;
-            phone: Record<string, never> | null;
-            email: Record<string, never> | null;
+            phone: string | null;
+            email: string | null;
             status: string;
         };
         MeResponseDto: {
