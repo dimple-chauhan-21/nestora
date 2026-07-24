@@ -23,3 +23,7 @@ export const DEFAULT_PASS_VALIDITY_HOURS = Number(process.env.VISIT_PASS_VALIDIT
 export const GUARD_DASHBOARD_POLL_INTERVAL_SECONDS = Number(
   process.env.GUARD_DASHBOARD_POLL_INTERVAL_SECONDS ?? 15,
 );
+
+/** Default/max page size for GET /flats/{id}/visits/history's cursor pagination (§11.1). */
+export const DEFAULT_HISTORY_PAGE_SIZE = 20;
+export const MAX_HISTORY_PAGE_SIZE = 100;

@@ -158,6 +158,8 @@ export class AuthService {
       user: { id: user.id, phone: user.phone, email: user.email, status: user.status },
       roles: access.roles,
       permissions: access.permissions,
+      flatId: access.flatId,
+      societyId: access.societyId,
     };
   }
 

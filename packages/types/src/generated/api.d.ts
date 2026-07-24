@@ -1446,6 +1446,9 @@ export interface components {
             user: components["schemas"]["MeUserDto"];
             roles: string[];
             permissions: string[];
+            /** @description Set for a flat-pinned role (Owner/Tenant); null for a society-wide role. */
+            flatId: string | null;
+            societyId: string | null;
         };
         CreateSocietyDto: Record<string, never>;
         UpdateSocietySettingsDto: Record<string, never>;
@@ -1457,6 +1460,40 @@ export interface components {
         CreateResidentDto: Record<string, never>;
         MoveOutDto: Record<string, never>;
         CreateWalkInDto: Record<string, never>;
+        VisitVisitorDto: {
+            id: string;
+            name: string | null;
+            phone: string | null;
+            photoUrl: string | null;
+        };
+        VisitResponseDto: {
+            id: string;
+            flatId: string;
+            visitor: components["schemas"]["VisitVisitorDto"];
+            /** @enum {string} */
+            visitType: "walk_in" | "pre_approved" | "recurring";
+            purpose: string | null;
+            /** @enum {string} */
+            status: "pending" | "approved" | "rejected" | "checked_in" | "checked_out" | "expired";
+            qrCode: string | null;
+            /** Format: date-time */
+            validFrom: string | null;
+            /** Format: date-time */
+            validTo: string | null;
+            approvedBy: string | null;
+            /** Format: date-time */
+            approvedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        VisitPaginationMetaDto: {
+            nextCursor: string | null;
+            hasMore: boolean;
+        };
+        PaginatedVisitResponseDto: {
+            data: components["schemas"]["VisitResponseDto"][];
+            pagination: components["schemas"]["VisitPaginationMetaDto"];
+        };
         CreateGuestInviteDto: Record<string, never>;
         RegisterDeviceTokenDto: Record<string, never>;
         GuardLoginDto: Record<string, never>;
@@ -1992,7 +2029,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["VisitResponseDto"];
+                };
             };
         };
     };
@@ -2011,7 +2050,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["VisitResponseDto"];
+                };
             };
         };
     };
@@ -2030,13 +2071,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["VisitResponseDto"];
+                };
             };
         };
     };
     FlatVisitController_history: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque cursor from a previous page's pagination.nextCursor */
+                cursor?: string;
+                limit?: number;
+                /** @description Allow-listed filter, e.g. status=pending for a resident's approval queue. */
+                status?: "pending" | "approved" | "rejected" | "checked_in" | "checked_out" | "expired";
+            };
             header?: never;
             path: {
                 id: string;
@@ -2049,7 +2098,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PaginatedVisitResponseDto"];
+                };
             };
         };
     };

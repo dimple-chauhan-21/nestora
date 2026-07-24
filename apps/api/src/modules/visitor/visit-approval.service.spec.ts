@@ -14,6 +14,10 @@ import type { Clock } from '../../common/clock';
 import type { NotificationProvider, NotificationPayload } from '../notification/notification-provider.interface';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
 
+function toCamelCase(snake: string): string {
+  return snake.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
 class FakeClock implements Clock {
   private current = new Date('2026-01-01T00:00:00.000Z');
   now(): Date {
@@ -52,14 +56,23 @@ class FakeRepo<T extends { id: string }> {
   }
   async find(options: { where: Partial<Record<string, unknown>> }): Promise<T[]> {
     return this.rows.filter((r) =>
-      Object.entries(options.where).every(
-        ([k, v]) => (r as unknown as Record<string, unknown>)[k] === v,
-      ),
+      Object.entries(options.where).every(([k, v]) => {
+        const rec = r as unknown as Record<string, unknown>;
+        // Duck-types TypeORM's In() FindOperator rather than importing the
+        // real class — this fake only needs to understand the operators the
+        // service actually issues.
+        if (v && typeof v === 'object' && (v as { _type?: string })._type === 'in') {
+          return ((v as { _value: unknown[] })._value).includes(rec[k]);
+        }
+        return rec[k] === v;
+      }),
     );
   }
   createQueryBuilder(alias: string) {
     const rows = this.rows;
     const conditions: Array<(r: T) => boolean> = [];
+    const order: Array<{ field: string; dir: 'ASC' | 'DESC' }> = [];
+    let limit: number | undefined;
     const qb = {
       where(_sql: string, params?: Record<string, unknown>) {
         conditions.push(buildPredicate(_sql, params));
@@ -69,8 +82,29 @@ class FakeRepo<T extends { id: string }> {
         conditions.push(buildPredicate(_sql, params));
         return qb;
       },
+      orderBy(field: string, dir: 'ASC' | 'DESC') {
+        order.push({ field: toCamelCase(field.split('.').pop()!), dir });
+        return qb;
+      },
+      addOrderBy(field: string, dir: 'ASC' | 'DESC') {
+        order.push({ field: toCamelCase(field.split('.').pop()!), dir });
+        return qb;
+      },
+      take(n: number) {
+        limit = n;
+        return qb;
+      },
       async getMany(): Promise<T[]> {
-        return rows.filter((r) => conditions.every((c) => c(r)));
+        let result = rows.filter((r) => conditions.every((c) => c(r)));
+        for (const { field, dir } of [...order].reverse()) {
+          result = [...result].sort((a, b) => {
+            const av = (a as unknown as Record<string, unknown>)[field];
+            const bv = (b as unknown as Record<string, unknown>)[field];
+            const cmp = av! > bv! ? 1 : av! < bv! ? -1 : 0;
+            return dir === 'DESC' ? -cmp : cmp;
+          });
+        }
+        return limit !== undefined ? result.slice(0, limit) : result;
       },
       async getOne(): Promise<T | null> {
         return rows.find((r) => conditions.every((c) => c(r))) ?? null;
@@ -80,6 +114,9 @@ class FakeRepo<T extends { id: string }> {
       // Minimal matcher for the specific queries VisitApprovalService/BlacklistService issue.
       return (r: T) => {
         const rec = r as unknown as Record<string, unknown>;
+        if (sql.includes('flat_id') && params?.flatId !== undefined) {
+          if (rec.flatId !== params.flatId) return false;
+        }
         if (sql.includes('society_id') && params?.societyId !== undefined) {
           if (rec.societyId !== params.societyId) return false;
         }
@@ -92,7 +129,13 @@ class FakeRepo<T extends { id: string }> {
         if (sql.includes('created_at < :cutoff') && params?.cutoff !== undefined) {
           if (!((rec.createdAt as Date) < (params.cutoff as Date))) return false;
         }
-        if (sql.startsWith('(') && sql.endsWith(')') && sql.includes('=')) {
+        if (sql.includes('cursorCreatedAt') && params?.cursorCreatedAt !== undefined) {
+          const cursorCreatedAt = params.cursorCreatedAt as string;
+          const cursorId = params.cursorId as string;
+          const rowCreatedAt = (rec.createdAt as Date).toISOString();
+          return rowCreatedAt < cursorCreatedAt || (rowCreatedAt === cursorCreatedAt && (rec.id as string) < cursorId);
+        }
+        if (sql.startsWith('(') && sql.endsWith(')') && sql.includes('=') && !sql.includes('cursorCreatedAt')) {
           // BlacklistService's OR-combined identity clause — handles both a
           // single field and multiple fields joined by ' OR '.
           const clauses = sql.slice(1, -1).split(' OR ');
@@ -248,5 +291,59 @@ describe('VisitApprovalService', () => {
     const secondSweepCount = await service.checkAndEscalate(societyId, 300);
     expect(secondSweepCount).toBe(0);
     expect(notifications.sent).toHaveLength(0);
+  });
+
+  it("walk-in and approve responses embed the visitor's name/phone/photo, not just an opaque visitorId", async () => {
+    const walkIn = await service.createWalkIn(
+      flatId,
+      {
+        flatId,
+        name: 'Ramesh Patel',
+        phone: '+919822233344',
+        photoUrl: 'https://cdn.example.com/v1.jpg',
+        purpose: 'Courier',
+      },
+      PLATFORM_SCOPE,
+      'guard-1',
+    );
+    expect(walkIn.visitor).toEqual({
+      id: expect.any(String),
+      name: 'Ramesh Patel',
+      phone: '+919822233344',
+      photoUrl: 'https://cdn.example.com/v1.jpg',
+    });
+    expect((walkIn as unknown as { visitorId?: string }).visitorId).toBeUndefined();
+
+    const approved = await service.approve(walkIn.id, PLATFORM_SCOPE, ownerUserId);
+    expect(approved.visitor.name).toBe('Ramesh Patel');
+    expect(approved.status).toBe('approved');
+  });
+
+  it('history() paginates with a keyset cursor, newest first, and reports hasMore/nextCursor correctly', async () => {
+    const names = ['Visitor A', 'Visitor B', 'Visitor C', 'Visitor D', 'Visitor E'];
+    for (const name of names) {
+      await service.createWalkIn(flatId, { flatId, name }, PLATFORM_SCOPE, 'guard-1');
+      clock.advance(1000); // distinct created_at per visit — newest is 'Visitor E'
+    }
+
+    const page1 = await service.history(flatId, PLATFORM_SCOPE, { limit: 2 });
+    expect(page1.data.map((v) => v.visitor.name)).toEqual(['Visitor E', 'Visitor D']);
+    expect(page1.pagination.hasMore).toBe(true);
+    expect(page1.pagination.nextCursor).toEqual(expect.any(String));
+
+    const page2 = await service.history(flatId, PLATFORM_SCOPE, {
+      limit: 2,
+      cursor: page1.pagination.nextCursor!,
+    });
+    expect(page2.data.map((v) => v.visitor.name)).toEqual(['Visitor C', 'Visitor B']);
+    expect(page2.pagination.hasMore).toBe(true);
+
+    const page3 = await service.history(flatId, PLATFORM_SCOPE, {
+      limit: 2,
+      cursor: page2.pagination.nextCursor!,
+    });
+    expect(page3.data.map((v) => v.visitor.name)).toEqual(['Visitor A']);
+    expect(page3.pagination.hasMore).toBe(false);
+    expect(page3.pagination.nextCursor).toBeNull();
   });
 });

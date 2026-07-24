@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { VisitorVisit } from '../../database/entities/visitor-visit.entity';
+import { In, Repository } from 'typeorm';
+import { VisitorVisit, type VisitStatus } from '../../database/entities/visitor-visit.entity';
 import { Visitor } from '../../database/entities/visitor.entity';
 import { Resident } from '../../database/entities/resident.entity';
 import { Flat } from '../../database/entities/flat.entity';
@@ -10,12 +10,39 @@ import { QrTokenService } from './qr/qr-token.service';
 import { NOTIFICATION_PROVIDER, type NotificationProvider } from '../notification/notification-provider.interface';
 import { CLOCK, type Clock } from '../../common/clock';
 import { assertFlatMatch, assertSocietyMatch } from '../../common/tenant-scope/tenant-scope.util';
+import { decodeCursor, encodeCursor } from '../../common/pagination/cursor.util';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
 import { CreateWalkInDto } from './dto/create-walk-in.dto';
+import { VisitResponseDto } from './dto/visit-response.dto';
+import { PaginatedVisitResponseDto } from './dto/paginated-visit-response.dto';
 import {
   DEFAULT_ESCALATION_WINDOW_SECONDS,
+  DEFAULT_HISTORY_PAGE_SIZE,
   DEFAULT_PASS_VALIDITY_HOURS,
+  MAX_HISTORY_PAGE_SIZE,
 } from './visitor.constants';
+
+function toVisitResponseDto(visit: VisitorVisit, visitor: Visitor | null): VisitResponseDto {
+  return {
+    id: visit.id,
+    flatId: visit.flatId,
+    visitor: {
+      id: visit.visitorId,
+      name: visitor?.name ?? null,
+      phone: visitor?.phone ?? null,
+      photoUrl: visitor?.photoUrl ?? null,
+    },
+    visitType: visit.visitType,
+    purpose: visit.purpose,
+    status: visit.status,
+    qrCode: visit.qrCode,
+    validFrom: visit.validFrom ? visit.validFrom.toISOString() : null,
+    validTo: visit.validTo ? visit.validTo.toISOString() : null,
+    approvedBy: visit.approvedBy,
+    approvedAt: visit.approvedAt ? visit.approvedAt.toISOString() : null,
+    createdAt: visit.createdAt.toISOString(),
+  };
+}
 
 @Injectable()
 export class VisitApprovalService {
@@ -45,7 +72,7 @@ export class VisitApprovalService {
     dto: CreateWalkInDto,
     scope: TenantScope,
     _guardId: string,
-  ): Promise<VisitorVisit> {
+  ): Promise<VisitResponseDto> {
     const flat = await this.loadFlatOrThrow(flatId);
     assertSocietyMatch(flat.societyId, scope);
 
@@ -92,7 +119,7 @@ export class VisitApprovalService {
       });
     }
 
-    return visit;
+    return toVisitResponseDto(visit, visitor);
   }
 
   private async loadVisitOrThrow(visitId: string): Promise<VisitorVisit> {
@@ -110,7 +137,7 @@ export class VisitApprovalService {
     assertFlatMatch(visit.flatId, scope);
   }
 
-  async approve(visitId: string, scope: TenantScope, approverId: string): Promise<VisitorVisit> {
+  async approve(visitId: string, scope: TenantScope, approverId: string): Promise<VisitResponseDto> {
     const visit = await this.loadVisitOrThrow(visitId);
     await this.assertCanActOnVisit(visit, scope);
 
@@ -142,10 +169,10 @@ export class VisitApprovalService {
     visit.approvedAt = now;
     await this.visits.save(visit);
 
-    return visit;
+    return toVisitResponseDto(visit, visitor);
   }
 
-  async reject(visitId: string, scope: TenantScope, _rejecterId: string): Promise<VisitorVisit> {
+  async reject(visitId: string, scope: TenantScope, _rejecterId: string): Promise<VisitResponseDto> {
     const visit = await this.loadVisitOrThrow(visitId);
     await this.assertCanActOnVisit(visit, scope);
 
@@ -155,7 +182,9 @@ export class VisitApprovalService {
 
     visit.status = 'rejected';
     await this.visits.save(visit);
-    return visit;
+
+    const visitor = await this.visitors.findOne({ where: { id: visit.visitorId } });
+    return toVisitResponseDto(visit, visitor);
   }
 
   /**
@@ -209,14 +238,50 @@ export class VisitApprovalService {
     return escalated;
   }
 
-  async history(flatId: string, scope: TenantScope): Promise<VisitorVisit[]> {
+  async history(
+    flatId: string,
+    scope: TenantScope,
+    query: { cursor?: string; limit?: number; status?: VisitStatus },
+  ): Promise<PaginatedVisitResponseDto> {
     const flat = await this.loadFlatOrThrow(flatId);
     assertSocietyMatch(flat.societyId, scope);
     assertFlatMatch(flat.id, scope);
 
-    return this.visits.find({
-      where: { flatId: flat.id },
-      order: { createdAt: 'DESC' },
-    });
+    const limit = Math.min(query.limit ?? DEFAULT_HISTORY_PAGE_SIZE, MAX_HISTORY_PAGE_SIZE);
+
+    const qb = this.visits
+      .createQueryBuilder('visit')
+      .where('visit.flat_id = :flatId', { flatId: flat.id })
+      .orderBy('visit.created_at', 'DESC')
+      .addOrderBy('visit.id', 'DESC')
+      .take(limit + 1);
+
+    if (query.status) {
+      qb.andWhere('visit.status = :status', { status: query.status });
+    }
+
+    if (query.cursor) {
+      const decoded = decodeCursor(query.cursor);
+      qb.andWhere(
+        '(visit.created_at < :cursorCreatedAt OR (visit.created_at = :cursorCreatedAt AND visit.id < :cursorId))',
+        { cursorCreatedAt: decoded.createdAt, cursorId: decoded.id },
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+
+    const visitorIds = [...new Set(page.map((v) => v.visitorId))];
+    const visitorRows = visitorIds.length ? await this.visitors.find({ where: { id: In(visitorIds) } }) : [];
+    const visitorsById = new Map(visitorRows.map((v) => [v.id, v]));
+
+    const data = page.map((visit) => toVisitResponseDto(visit, visitorsById.get(visit.visitorId) ?? null));
+
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id }) : null;
+
+    return { data, pagination: { nextCursor, hasMore } };
   }
 }

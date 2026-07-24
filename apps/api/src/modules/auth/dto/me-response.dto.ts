@@ -23,4 +23,10 @@ export class MeResponseDto {
 
   @ApiProperty({ type: [String] })
   permissions!: string[];
+
+  @ApiProperty({ type: String, nullable: true, description: 'Set for a flat-pinned role (Owner/Tenant); null for a society-wide role.' })
+  flatId!: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  societyId!: string | null;
 }

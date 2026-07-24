@@ -151,7 +151,7 @@ describe('Visitor walk-in + gate flow (e2e)', () => {
       .get(`/api/v1/flats/${flatId}/visits/history`)
       .set('Authorization', `Bearer ${ownerToken}`)
       .expect(200);
-    const visitAfterCheckIn = historyAfterCheckIn.body.find((v: { id: string }) => v.id === visitId);
+    const visitAfterCheckIn = historyAfterCheckIn.body.data.find((v: { id: string }) => v.id === visitId);
     expect(visitAfterCheckIn.status).toBe('checked_in');
 
     // 4. Guard scans again to check out.
@@ -166,7 +166,7 @@ describe('Visitor walk-in + gate flow (e2e)', () => {
       .get(`/api/v1/flats/${flatId}/visits/history`)
       .set('Authorization', `Bearer ${ownerToken}`)
       .expect(200);
-    const visitAfterCheckOut = historyAfterCheckOut.body.find((v: { id: string }) => v.id === visitId);
+    const visitAfterCheckOut = historyAfterCheckOut.body.data.find((v: { id: string }) => v.id === visitId);
     expect(visitAfterCheckOut.status).toBe('checked_out');
   });
 
