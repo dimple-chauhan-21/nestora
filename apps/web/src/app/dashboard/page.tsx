@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getAccessToken } from '@/lib/session';
 import { getMe } from '@/lib/me';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@nestora/ui';
+import { formatRoleName } from '@nestora/utils';
 import { PendingVisitsSection } from './pending-visits-section';
 
 export default async function DashboardPage() {
@@ -23,7 +24,7 @@ export default async function DashboardPage() {
           <div>
             <p className="text-sm text-muted-foreground">Logged in as {me.user.phone}</p>
             <p className="text-xs text-muted-foreground">
-              {me.roles.length > 0 ? me.roles.join(', ') : 'No roles assigned yet'}
+              {me.roles.length > 0 ? me.roles.map(formatRoleName).join(', ') : 'No roles assigned yet'}
             </p>
           </div>
           {me.flatId && (

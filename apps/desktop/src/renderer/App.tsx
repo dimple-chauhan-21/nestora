@@ -12,6 +12,7 @@ import {
   Alert,
   AlertDescription,
 } from '@nestora/ui';
+import { formatRoleName } from '@nestora/utils';
 import type { components } from '@nestora/types';
 
 type MeResponse = components['schemas']['MeResponseDto'];
@@ -133,7 +134,9 @@ export function App() {
         <Card className="w-full max-w-sm">
           <CardHeader>
             <CardTitle>Logged in as {me.user.phone}</CardTitle>
-            <CardDescription>{me.roles.length > 0 ? me.roles.join(', ') : 'No roles assigned yet'}</CardDescription>
+            <CardDescription>
+              {me.roles.length > 0 ? me.roles.map(formatRoleName).join(', ') : 'No roles assigned yet'}
+            </CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
             Guard-kiosk placeholder — proves the desktop app reaches the real API and persists a

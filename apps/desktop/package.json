@@ -16,6 +16,7 @@
     "@nestora/api-client": "workspace:*",
     "@nestora/types": "workspace:*",
     "@nestora/ui": "workspace:*",
+    "@nestora/utils": "workspace:*",
     "better-sqlite3": "^12.11.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

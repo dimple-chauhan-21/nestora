@@ -38,7 +38,7 @@ export function PendingVisitsSection({ flatId }: { flatId: string }) {
     <section>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-foreground">Pending Approvals</h2>
-        {query.data && query.data.data.length > 0 && (
+        {query.isSuccess && query.data.data.length > 0 && (
           <span className="rounded-full bg-primary px-2.5 py-0.5 text-xs font-medium text-primary-foreground">
             {query.data.data.length}
           </span>

@@ -143,7 +143,7 @@ importers:
         version: 11.10.0
       eslint:
         specifier: ^9.15.0
-        version: 9.39.5(jiti@1.21.7)
+        version: 9.39.5(jiti@1.21.7)(supports-color@10.2.2)
       jest:
         specifier: ^29.7.0
         version: 29.7.0(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
@@ -180,6 +180,9 @@ importers:
       '@nestora/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@nestora/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1
@@ -280,7 +283,7 @@ importers:
         version: 10.5.2(postcss@8.5.18)
       eslint:
         specifier: ^9.15.0
-        version: 9.39.5(jiti@1.21.7)(supports-color@10.2.2)
+        version: 9.39.5(jiti@1.21.7)
       postcss:
         specifier: ^8.4.47
         version: 8.5.18
