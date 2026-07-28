@@ -34,9 +34,13 @@ app.whenReady().then(async () => {
   console.log(`[offline-queue] ${pending.length} unsynced operation(s) at boot`);
 
   // Real guard sessions set these after POST /guard/login; a no-op if
-  // there's nothing queued or no session yet. The dashboard poller (started
-  // separately, once logged in) is the actual escalation trigger — see
-  // dashboard-poller.ts.
+  // there's nothing queued or no session yet. The real escalation trigger
+  // is the renderer's own GET /guard/dashboard poll (React Query,
+  // refetchInterval — see guard-console.tsx), same as the resident
+  // dashboard's poll in apps/web. An earlier main-process poller
+  // (dashboard-poller.ts) predated any real login flow and only ever
+  // logged to the console, not the renderer — removed once the renderer
+  // had a real one to avoid two competing "the real trigger" stories.
   const apiBaseUrl = process.env.NESTORA_API_URL ?? 'http://localhost:4000';
   const accessToken = process.env.NESTORA_GUARD_ACCESS_TOKEN;
   if (accessToken) {

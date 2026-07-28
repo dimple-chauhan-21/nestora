@@ -12,54 +12,58 @@ import {
   Alert,
   AlertDescription,
 } from '@nestora/ui';
-import { formatRoleName } from '@nestora/utils';
 import type { components } from '@nestora/types';
+import { API_BASE_URL, DEVICE_ID } from './api-config';
+import { GuardConsole } from './guard-console';
 
-type MeResponse = components['schemas']['MeResponseDto'];
+type GuardLoginResponse = components['schemas']['GuardLoginResponseDto'];
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:4000';
 const PHONE_PATTERN = /^\+91[6-9]\d{9}$/;
-const DEVICE_ID = 'guard-kiosk'; // one kiosk, one stable device id — no per-browser-install concept here
+const GATE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Step = 'phone' | 'otp' | 'authenticated';
 
+interface Session {
+  accessToken: string;
+  phone: string;
+}
+
 /**
- * Placeholder guard-login: same OTP flow as apps/web's /login, reusing
- * packages/ui. Real guard auth (§5.3/§1) is PIN/biometric — this proves
- * the desktop app can hit the real API and persist a session, nothing
- * more. See session-store.ts for how/why JWT storage here differs from
- * apps/web's httpOnly cookie: no browser, no cookie jar, but a kiosk's
- * physical accessibility means the session file itself needs to be
- * OS-keychain-encrypted (Electron's safeStorage), not just kept off the
- * DOM the way a cookie already is.
+ * Real guard login (POST /guard/login), not the generic OTP-verify placeholder
+ * this screen used before. §5.3/§1's eventual PIN/biometric session is still
+ * a future upgrade — this reuses Module 1's OTP flow like every other login
+ * in the app, per GuardLoginDto's own comment.
+ *
+ * `gateId` here is a plain typed UUID field, which is the honest dev-testable
+ * stand-in for how a real kiosk would actually get its gate: §5's own
+ * "Kiosk devices are provisioned/allow-listed by device ID" framing means a
+ * real deployment pins gateId to the kiosk at provisioning time (a local
+ * config file, not a per-login guard choice) — a guard at a real gate never
+ * types a UUID. See session-store.ts for how/why JWT storage here differs
+ * from apps/web's httpOnly cookie.
  */
 export function App() {
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
+  const [gateId, setGateId] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [me, setMe] = useState<MeResponse | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
     void (async () => {
       const existing = await window.nestora.session.get();
       if (!existing) return;
-      const meResult = await fetchMe(existing.accessToken);
-      if (meResult) {
-        setMe(meResult);
-        setStep('authenticated');
-      }
+      // A restored session's access token may be expired by relaunch time —
+      // confirmed by the guard console's own dashboard fetch, not guessed
+      // here. If it's dead, GuardConsole surfaces that as a real error state
+      // (same "don't leave silent failures" standard as everywhere else),
+      // not a silent bounce back to the login screen.
+      setSession({ accessToken: existing.accessToken, phone: existing.phone });
+      setStep('authenticated');
     })();
   }, []);
-
-  async function fetchMe(accessToken: string): Promise<MeResponse | null> {
-    const res = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!res.ok) return null;
-    return res.json();
-  }
 
   async function handleSendOtp(e: FormEvent) {
     e.preventDefault();
@@ -67,6 +71,10 @@ export function App() {
 
     if (!PHONE_PATTERN.test(phone)) {
       setError('Enter a valid +91 phone number, e.g. +919876543210');
+      return;
+    }
+    if (!GATE_ID_PATTERN.test(gateId)) {
+      setError('Enter this kiosk\'s gate ID (a UUID — ask your admin if unsure).');
       return;
     }
 
@@ -95,14 +103,15 @@ export function App() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/auth/otp/verify`, {
+      const res = await fetch(`${API_BASE_URL}/api/v1/guard/login`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ phone, otp, deviceId: DEVICE_ID }),
+        body: JSON.stringify({ phone, otp, deviceId: DEVICE_ID, gateId }),
       });
-      const body = await res.json().catch(() => null);
-      if (!res.ok || !body) {
-        setError(typeof body?.message === 'string' ? body.message : 'Incorrect or expired code. Try again.');
+      const body: GuardLoginResponse | { message?: string | string[] } | null = await res.json().catch(() => null);
+      if (!res.ok || !body || !('accessToken' in body)) {
+        const message = body && 'message' in body ? body.message : undefined;
+        setError(typeof message === 'string' ? message : 'Incorrect code, or this gate is not in your society.');
         return;
       }
 
@@ -113,8 +122,7 @@ export function App() {
         phone,
       });
 
-      const meResult = await fetchMe(body.accessToken);
-      setMe(meResult);
+      setSession({ accessToken: body.accessToken, phone });
       setStep('authenticated');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -128,23 +136,17 @@ export function App() {
     }
   }
 
-  if (step === 'authenticated' && me) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-sm">
-          <CardHeader>
-            <CardTitle>Logged in as {me.user.phone}</CardTitle>
-            <CardDescription>
-              {me.roles.length > 0 ? me.roles.map(formatRoleName).join(', ') : 'No roles assigned yet'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Guard-kiosk placeholder — proves the desktop app reaches the real API and persists a
-            session locally. Real PIN/biometric guard login is a future session.
-          </CardContent>
-        </Card>
-      </main>
-    );
+  async function handleLogout() {
+    await window.nestora.session.clear();
+    setSession(null);
+    setStep('phone');
+    setPhone('');
+    setGateId('');
+    setOtp('');
+  }
+
+  if (step === 'authenticated' && session) {
+    return <GuardConsole accessToken={session.accessToken} phone={session.phone} onLogout={handleLogout} />;
   }
 
   return (
@@ -178,6 +180,18 @@ export function App() {
                   autoFocus
                 />
               </FormField>
+              <FormField label="Gate ID" htmlFor="gateId">
+                <Input
+                  type="text"
+                  placeholder="00000000-0000-0000-0000-000000000000"
+                  value={gateId}
+                  onChange={(e) => setGateId(e.target.value)}
+                  disabled={loading}
+                />
+              </FormField>
+              <p className="text-xs text-muted-foreground">
+                In a real deployment this kiosk is pre-provisioned with its own gate — you wouldn&apos;t type this.
+              </p>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading && <Spinner />}
                 Send OTP
