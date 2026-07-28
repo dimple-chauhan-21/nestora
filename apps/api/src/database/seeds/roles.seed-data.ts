@@ -304,6 +304,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'emergency:raise',
     'parking:read',
     'delivery:manage',
+    'society:read', // flat lookup for manual visitor entry (walk-in) when there's no QR
   ],
   accountant: ['billing:manage', 'inventory:manage'],
   flat_owner: [

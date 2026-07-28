@@ -144,6 +144,10 @@ describe('Delivery Management (e2e)', () => {
     expect(createRes.body.otpVerified).toBe(false);
     // The raw OTP hash must never appear in any response.
     expect(createRes.body.otpHash).toBeUndefined();
+    // Embedded flat/agent identity, not opaque IDs — same reasoning as VisitResponseDto.
+    expect(createRes.body.flat).toEqual({ id: flatAId, flatNumber: expect.any(String) });
+    expect(createRes.body.agent.name).toBe('Ramesh');
+    expect(createRes.body.agent.platform).toBe('Zomato');
 
     // The guard never sees the code — it only ever reaches the resident,
     // via the SMS fallback channel captured here the same way the resident

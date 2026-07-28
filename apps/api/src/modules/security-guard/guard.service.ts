@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { GateLog } from '../../database/entities/gate-log.entity';
 import { VisitorVisit } from '../../database/entities/visitor-visit.entity';
 import { EmergencyAlert } from '../../database/entities/emergency-alert.entity';
@@ -8,33 +8,26 @@ import { ShiftReport } from '../../database/entities/shift-report.entity';
 import { Resident } from '../../database/entities/resident.entity';
 import { Flat } from '../../database/entities/flat.entity';
 import { Delivery } from '../../database/entities/delivery.entity';
+import { DeliveryAgent } from '../../database/entities/delivery-agent.entity';
+import { Gate } from '../../database/entities/gate.entity';
 import { GuardContextService } from './guard-context.service';
 import { AuthService, type RequestContext } from '../auth/auth.service';
-import { TokenService, type IssuedTokenPair } from '../auth/token.service';
+import { TokenService } from '../auth/token.service';
 import { VisitApprovalService } from '../visitor/visit-approval.service';
+import { toDeliveryView } from '../delivery/delivery.service';
+import { toEmergencyAlertResponseDto } from './emergency-alert.service';
 import {
   NOTIFICATION_PROVIDER,
   type NotificationProvider,
 } from '../notification/notification-provider.interface';
 import { GuardLoginDto } from './dto/guard-login.dto';
 import { CallResidentDto } from './dto/call-resident.dto';
+import { GuardLoginResponseDto } from './dto/guard-login-response.dto';
+import { CallResidentResponseDto } from './dto/call-resident-response.dto';
+import { GuardDashboardResponseDto } from './dto/guard-dashboard-response.dto';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
 import { assertSocietyMatch } from '../../common/tenant-scope/tenant-scope.util';
-
-export interface GuardLoginResult extends IssuedTokenPair {
-  guard: { id: string; gateId: string; societyId: string };
-}
-
-export interface GuardDashboard {
-  gateId: string;
-  societyId: string;
-  pendingVisits: VisitorVisit[];
-  pendingDeliveries: Delivery[];
-  escalatedJustNow: number;
-  activeAlerts: EmergencyAlert[];
-  todayEntries: number;
-  todayExits: number;
-}
+import { TenantConnectionService } from '../../common/tenant-connection/tenant-connection.service';
 
 @Injectable()
 export class GuardService {
@@ -46,10 +39,13 @@ export class GuardService {
     @InjectRepository(Resident) private readonly residents: Repository<Resident>,
     @InjectRepository(Flat) private readonly flats: Repository<Flat>,
     @InjectRepository(Delivery) private readonly deliveries: Repository<Delivery>,
+    @InjectRepository(DeliveryAgent) private readonly agents: Repository<DeliveryAgent>,
+    @InjectRepository(Gate) private readonly gates: Repository<Gate>,
     private readonly guardContext: GuardContextService,
     private readonly authService: AuthService,
     private readonly tokenService: TokenService,
     private readonly visitApprovalService: VisitApprovalService,
+    private readonly tenantConnection: TenantConnectionService,
     @Inject(NOTIFICATION_PROVIDER) private readonly notifications: NotificationProvider,
   ) {}
 
@@ -59,16 +55,32 @@ export class GuardService {
    * action: logging in at a kiosk physically bound to a gate rebinds the
    * guard's active gate there and then.
    */
-  async login(dto: GuardLoginDto, ctx: RequestContext): Promise<GuardLoginResult> {
+  async login(dto: GuardLoginDto, ctx: RequestContext): Promise<GuardLoginResponseDto> {
     const tokens = await this.authService.verifyOtp(dto.phone, dto.otp, dto.deviceId, ctx);
     const payload = this.tokenService.verifyAccessToken(tokens.accessToken);
 
     const guard = await this.guardContext.resolveOrThrow(payload.sub);
+
+    // `gates` has no self-user RLS bypass the way `guards` does (see
+    // GuardsSelfUserRlsBypass migration) — a gate isn't owned by a specific
+    // user, so that pattern doesn't apply here. Instead, now that we know
+    // the guard's own society (via guards' self-user bypass above), we set
+    // the scope explicitly for the rest of THIS request rather than waiting
+    // for TenantScopeInterceptor to do it post-response — the same
+    // "explicit override before any JWT-derived scope exists yet" mechanism
+    // PermissionsService.resolve() already uses for user_roles.
+    await this.tenantConnection.applyScope({ societyId: guard.societyId, isPlatformScope: false }, guard.userId);
+
+    const gate = await this.gates.findOne({ where: { id: dto.gateId } });
+    if (!gate || gate.societyId !== guard.societyId) {
+      throw new NotFoundException('Gate not found in this guard\'s society');
+    }
+
     await this.guardContext.assignGate(guard, dto.gateId);
 
     return {
       ...tokens,
-      guard: { id: guard.id, gateId: dto.gateId, societyId: guard.societyId },
+      guard: { id: guard.id, gateId: dto.gateId, gateName: gate.name, societyId: guard.societyId },
     };
   }
 
@@ -78,26 +90,25 @@ export class GuardService {
    * Desktop kiosk polls this at GUARD_DASHBOARD_POLL_INTERVAL_SECONDS (15s),
    * well under the 300s default escalation window.
    */
-  async getDashboard(scope: TenantScope, guardUserId: string): Promise<GuardDashboard> {
+  async getDashboard(scope: TenantScope, guardUserId: string): Promise<GuardDashboardResponseDto> {
     const guard = await this.guardContext.resolveOrThrow(guardUserId);
     assertSocietyMatch(guard.societyId, scope);
 
     const escalatedJustNow = await this.visitApprovalService.checkAndEscalate(guard.societyId);
 
-    const pendingVisits = await this.visits.find({
+    const pendingVisits = await this.visitApprovalService.listPendingForSociety(guard.societyId);
+
+    const pendingDeliveryRows = await this.deliveries.find({
       where: { societyId: guard.societyId, status: 'pending' },
       order: { createdAt: 'ASC' },
     });
+    const pendingDeliveries = await this.embedDeliveries(pendingDeliveryRows);
 
-    const pendingDeliveries = await this.deliveries.find({
-      where: { societyId: guard.societyId, status: 'pending' },
-      order: { createdAt: 'ASC' },
-    });
-
-    const activeAlerts = await this.alerts.find({
+    const alertRows = await this.alerts.find({
       where: { societyId: guard.societyId, status: 'active' },
       order: { createdAt: 'DESC' },
     });
+    const activeAlerts = alertRows.map((alert) => toEmergencyAlertResponseDto(alert, guardUserId));
 
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -115,8 +126,11 @@ export class GuardService {
     const todayEntries = Number(todayCounts.find((c) => c.direction === 'in')?.count ?? 0);
     const todayExits = Number(todayCounts.find((c) => c.direction === 'out')?.count ?? 0);
 
+    const gate = guard.gateId ? await this.gates.findOne({ where: { id: guard.gateId } }) : null;
+
     return {
       gateId: guard.gateId ?? '',
+      gateName: gate?.name ?? null,
       societyId: guard.societyId,
       pendingVisits,
       pendingDeliveries,
@@ -125,6 +139,24 @@ export class GuardService {
       todayEntries,
       todayExits,
     };
+  }
+
+  /** Batch-loads flats + agents for a set of deliveries — same shape DeliveryService.listForFlat() embeds, just spanning the whole society instead of one flat. */
+  private async embedDeliveries(deliveries: Delivery[]) {
+    if (deliveries.length === 0) return [];
+
+    const flatIds = [...new Set(deliveries.map((d) => d.flatId))];
+    const agentIds = [...new Set(deliveries.map((d) => d.agentId))];
+    const [flatRows, agentRows] = await Promise.all([
+      this.flats.find({ where: { id: In(flatIds) } }),
+      this.agents.find({ where: { id: In(agentIds) } }),
+    ]);
+    const flatsById = new Map(flatRows.map((f) => [f.id, f]));
+    const agentsById = new Map(agentRows.map((a) => [a.id, a]));
+
+    return deliveries
+      .filter((d) => flatsById.has(d.flatId) && agentsById.has(d.agentId))
+      .map((d) => toDeliveryView(d, flatsById.get(d.flatId)!, agentsById.get(d.agentId)!));
   }
 
   /**
@@ -137,7 +169,7 @@ export class GuardService {
     dto: CallResidentDto,
     scope: TenantScope,
     guardUserId: string,
-  ): Promise<{ called: boolean; recipientUserId: string | null; at: Date }> {
+  ): Promise<CallResidentResponseDto> {
     const guard = await this.guardContext.resolveOrThrow(guardUserId);
     assertSocietyMatch(guard.societyId, scope);
 
@@ -159,7 +191,7 @@ export class GuardService {
       });
     }
 
-    return { called: !!primary?.userId, recipientUserId: primary?.userId ?? null, at };
+    return { called: !!primary?.userId, recipientUserId: primary?.userId ?? null, at: at.toISOString() };
   }
 
   /**

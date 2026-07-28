@@ -1452,6 +1452,12 @@ export interface components {
         };
         CreateSocietyDto: Record<string, never>;
         UpdateSocietySettingsDto: Record<string, never>;
+        FlatSummaryDto: {
+            id: string;
+            flatNumber: string;
+            floorNumber: number | null;
+            status: string;
+        };
         CreateAmenityDto: Record<string, never>;
         CreateSocietyDocumentDto: Record<string, never>;
         CreateVehicleDto: Record<string, never>;
@@ -1460,6 +1466,10 @@ export interface components {
         CreateResidentDto: Record<string, never>;
         MoveOutDto: Record<string, never>;
         CreateWalkInDto: Record<string, never>;
+        VisitFlatDto: {
+            id: string;
+            flatNumber: string;
+        };
         VisitVisitorDto: {
             id: string;
             name: string | null;
@@ -1468,7 +1478,7 @@ export interface components {
         };
         VisitResponseDto: {
             id: string;
-            flatId: string;
+            flat: components["schemas"]["VisitFlatDto"];
             visitor: components["schemas"]["VisitVisitorDto"];
             /** @enum {string} */
             visitType: "walk_in" | "pre_approved" | "recurring";
@@ -1497,8 +1507,91 @@ export interface components {
         CreateGuestInviteDto: Record<string, never>;
         RegisterDeviceTokenDto: Record<string, never>;
         GuardLoginDto: Record<string, never>;
+        GuardIdentityDto: {
+            id: string;
+            gateId: string;
+            gateName: string | null;
+            societyId: string;
+        };
+        GuardLoginResponseDto: {
+            accessToken: string;
+            refreshToken: string;
+            expiresIn: number;
+            guard: components["schemas"]["GuardIdentityDto"];
+        };
+        DeliveryFlatDto: {
+            id: string;
+            flatNumber: string;
+        };
+        DeliveryAgentDto: {
+            id: string;
+            name: string | null;
+            phone: string | null;
+            platform: string | null;
+        };
+        DeliveryResponseDto: {
+            id: string;
+            flat: components["schemas"]["DeliveryFlatDto"];
+            agent: components["schemas"]["DeliveryAgentDto"];
+            gateId: string;
+            parcelPhotoUrl: string | null;
+            /** @enum {string} */
+            status: "pending" | "handed_over" | "returned";
+            otpVerified: boolean;
+            heldAtDesk: boolean;
+            handoverOverrideReason: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        EmergencyAlertResponseDto: {
+            id: string;
+            /** @enum {string} */
+            type: "fire" | "medical" | "security" | "other";
+            /** @enum {string} */
+            status: "active" | "resolved";
+            resolutionNote: string | null;
+            resolvedAt: string | null;
+            raisedByMe: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        GuardDashboardResponseDto: {
+            gateId: string;
+            gateName: string | null;
+            societyId: string;
+            pendingVisits: components["schemas"]["VisitResponseDto"][];
+            pendingDeliveries: components["schemas"]["DeliveryResponseDto"][];
+            escalatedJustNow: number;
+            activeAlerts: components["schemas"]["EmergencyAlertResponseDto"][];
+            todayEntries: number;
+            todayExits: number;
+        };
         CallResidentDto: Record<string, never>;
+        CallResidentResponseDto: {
+            called: boolean;
+            recipientUserId: string | null;
+            /** Format: date-time */
+            at: string;
+        };
         GateScanDto: Record<string, never>;
+        GateLogResponseDto: {
+            id: string;
+            gateId: string;
+            guardId: string;
+            /** @enum {string} */
+            entityType: "visitor" | "delivery" | "staff" | "vehicle";
+            visitorVisitId: string | null;
+            /** @enum {string} */
+            direction: "in" | "out";
+            /** @enum {string} */
+            method: "qr" | "manual" | "facial";
+            overrideReason: string | null;
+            idempotencyKey: string;
+            /** Format: date-time */
+            occurredAt: string;
+        };
         GateManualEntryDto: Record<string, never>;
         RaiseEmergencyAlertDto: Record<string, never>;
         ResolveEmergencyAlertDto: Record<string, never>;
@@ -1508,6 +1601,9 @@ export interface components {
         ResolveViolationDto: Record<string, never>;
         CreateDeliveryDto: Record<string, never>;
         VerifyDeliveryOtpDto: Record<string, never>;
+        VerifyDeliveryOtpResponseDto: {
+            verified: boolean;
+        };
         UpdateDeliveryStatusDto: Record<string, never>;
         CreateStaffDto: Record<string, never>;
         CreateFlatMappingDto: Record<string, never>;
@@ -1807,7 +1903,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FlatSummaryDto"][];
+                };
             };
         };
     };
@@ -2182,7 +2280,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GuardLoginResponseDto"];
+                };
             };
         };
     };
@@ -2199,7 +2299,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GuardDashboardResponseDto"];
+                };
             };
         };
     };
@@ -2237,7 +2339,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CallResidentResponseDto"];
+                };
             };
         };
     };
@@ -2258,7 +2362,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GateLogResponseDto"];
+                };
             };
         };
     };
@@ -2279,7 +2385,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GateLogResponseDto"];
+                };
             };
         };
     };
@@ -2300,7 +2408,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EmergencyAlertResponseDto"];
+                };
             };
         };
     };
@@ -2323,7 +2433,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EmergencyAlertResponseDto"];
+                };
             };
         };
     };
@@ -2468,7 +2580,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DeliveryResponseDto"];
+                };
             };
         };
     };
@@ -2491,7 +2605,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["VerifyDeliveryOtpResponseDto"];
+                };
             };
         };
     };
@@ -2514,7 +2630,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DeliveryResponseDto"];
+                };
             };
         };
     };
@@ -2535,7 +2653,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DeliveryResponseDto"][];
+                };
             };
         };
     };

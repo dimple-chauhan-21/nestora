@@ -1,6 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 import type { VisitStatus, VisitType } from '../../../database/entities/visitor-visit.entity';
 
+class VisitFlatDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  flatNumber!: string;
+}
+
 class VisitVisitorDto {
   @ApiProperty()
   id!: string;
@@ -19,8 +27,8 @@ export class VisitResponseDto {
   @ApiProperty()
   id!: string;
 
-  @ApiProperty()
-  flatId!: string;
+  @ApiProperty({ type: VisitFlatDto })
+  flat!: VisitFlatDto;
 
   @ApiProperty({ type: VisitVisitorDto })
   visitor!: VisitVisitorDto;

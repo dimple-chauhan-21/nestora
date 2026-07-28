@@ -22,10 +22,10 @@ import {
   MAX_HISTORY_PAGE_SIZE,
 } from './visitor.constants';
 
-function toVisitResponseDto(visit: VisitorVisit, visitor: Visitor | null): VisitResponseDto {
+function toVisitResponseDto(visit: VisitorVisit, visitor: Visitor | null, flat: Flat): VisitResponseDto {
   return {
     id: visit.id,
-    flatId: visit.flatId,
+    flat: { id: flat.id, flatNumber: flat.flatNumber },
     visitor: {
       id: visit.visitorId,
       name: visitor?.name ?? null,
@@ -119,7 +119,7 @@ export class VisitApprovalService {
       });
     }
 
-    return toVisitResponseDto(visit, visitor);
+    return toVisitResponseDto(visit, visitor, flat);
   }
 
   private async loadVisitOrThrow(visitId: string): Promise<VisitorVisit> {
@@ -169,7 +169,8 @@ export class VisitApprovalService {
     visit.approvedAt = now;
     await this.visits.save(visit);
 
-    return toVisitResponseDto(visit, visitor);
+    const flat = await this.loadFlatOrThrow(visit.flatId);
+    return toVisitResponseDto(visit, visitor, flat);
   }
 
   async reject(visitId: string, scope: TenantScope, _rejecterId: string): Promise<VisitResponseDto> {
@@ -184,7 +185,8 @@ export class VisitApprovalService {
     await this.visits.save(visit);
 
     const visitor = await this.visitors.findOne({ where: { id: visit.visitorId } });
-    return toVisitResponseDto(visit, visitor);
+    const flat = await this.loadFlatOrThrow(visit.flatId);
+    return toVisitResponseDto(visit, visitor, flat);
   }
 
   /**
@@ -276,12 +278,44 @@ export class VisitApprovalService {
     const visitorRows = visitorIds.length ? await this.visitors.find({ where: { id: In(visitorIds) } }) : [];
     const visitorsById = new Map(visitorRows.map((v) => [v.id, v]));
 
-    const data = page.map((visit) => toVisitResponseDto(visit, visitorsById.get(visit.visitorId) ?? null));
+    const data = page.map((visit) => toVisitResponseDto(visit, visitorsById.get(visit.visitorId) ?? null, flat));
 
     const last = page[page.length - 1];
     const nextCursor =
       hasMore && last ? encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id }) : null;
 
     return { data, pagination: { nextCursor, hasMore } };
+  }
+
+  /**
+   * Society-wide pending queue for the guard dashboard — deliberately not
+   * `history()` reused with a different filter: this spans every flat in the
+   * society (guard's whole gate-side view, oldest-first so the
+   * longest-waiting visitor surfaces first), not one flat's own history
+   * (resident's view, newest-first, cursor-paginated). Same embedded
+   * visitor+flat shape as history()/createWalkIn()/approve()/reject() —
+   * the guard dashboard is meant to reuse it as-is, not fork a second shape.
+   */
+  async listPendingForSociety(societyId: string): Promise<VisitResponseDto[]> {
+    const pending = await this.visits.find({
+      where: { societyId, status: 'pending' },
+      order: { createdAt: 'ASC' },
+    });
+    if (pending.length === 0) return [];
+
+    const visitorIds = [...new Set(pending.map((v) => v.visitorId))];
+    const flatIds = [...new Set(pending.map((v) => v.flatId))];
+    const [visitorRows, flatRows] = await Promise.all([
+      this.visitors.find({ where: { id: In(visitorIds) } }),
+      this.flats.find({ where: { id: In(flatIds) } }),
+    ]);
+    const visitorsById = new Map(visitorRows.map((v) => [v.id, v]));
+    const flatsById = new Map(flatRows.map((f) => [f.id, f]));
+
+    return pending
+      .filter((visit) => flatsById.has(visit.flatId)) // defensive: a flat could theoretically be soft-deleted after the visit was logged
+      .map((visit) =>
+        toVisitResponseDto(visit, visitorsById.get(visit.visitorId) ?? null, flatsById.get(visit.flatId)!),
+      );
   }
 }

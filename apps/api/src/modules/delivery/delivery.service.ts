@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Delivery } from '../../database/entities/delivery.entity';
 import { DeliveryAgent } from '../../database/entities/delivery-agent.entity';
 import { Flat } from '../../database/entities/flat.entity';
@@ -18,45 +18,33 @@ import { SMS_PROVIDER, type SmsProvider } from '../auth/sms/sms-provider.interfa
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { VerifyDeliveryOtpDto } from './dto/verify-delivery-otp.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
+import { DeliveryResponseDto } from './dto/delivery-response.dto';
 
 /** §6's own explicit validation rule: OTP is 4-6 digits, 10-minute expiry. */
 export const DELIVERY_OTP_TTL_SECONDS = 10 * 60;
 export const DELIVERY_OTP_MAX_ATTEMPTS = 3;
 
-/** Never includes otpHash — that value must never leave this service, not even to the guard who logged the delivery. */
-export interface DeliveryView {
-  id: string;
-  societyId: string;
-  flatId: string;
-  agentId: string;
-  gateId: string;
-  guardId: string;
-  platform: string | null;
-  parcelPhotoUrl: string | null;
-  status: string;
-  otpVerified: boolean;
-  heldAtDesk: boolean;
-  handoverOverrideReason: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-function toView(delivery: Delivery): DeliveryView {
+/**
+ * Never includes otpHash/otpExpiresAt/otpAttempts — those must never leave
+ * this service, not even to the guard who logged the delivery (§6: "guard
+ * sees verified/not-verified boolean, not the code"). Exported (not a
+ * private method) so GuardService can reuse it for the dashboard's
+ * pendingDeliveries without a DeliveryModule DI edge — see
+ * DeliveryModule's own comment on why that import stays one-directional.
+ */
+export function toDeliveryView(delivery: Delivery, flat: Flat, agent: DeliveryAgent): DeliveryResponseDto {
   return {
     id: delivery.id,
-    societyId: delivery.societyId,
-    flatId: delivery.flatId,
-    agentId: delivery.agentId,
+    flat: { id: flat.id, flatNumber: flat.flatNumber },
+    agent: { id: agent.id, name: agent.name, phone: agent.phone, platform: agent.platform },
     gateId: delivery.gateId,
-    guardId: delivery.guardId,
-    platform: delivery.platform,
     parcelPhotoUrl: delivery.parcelPhotoUrl,
     status: delivery.status,
     otpVerified: delivery.otpVerifiedAt !== null,
     heldAtDesk: delivery.heldAtDesk,
     handoverOverrideReason: delivery.handoverOverrideReason,
-    createdAt: delivery.createdAt,
-    updatedAt: delivery.updatedAt,
+    createdAt: delivery.createdAt.toISOString(),
+    updatedAt: delivery.updatedAt.toISOString(),
   };
 }
 
@@ -89,15 +77,10 @@ export class DeliveryService {
    * INSERT path, so gate activity reporting never has to know deliveries
    * exist as a separate write.
    */
-  async create(dto: CreateDeliveryDto, scope: TenantScope, guardUserId: string): Promise<DeliveryView> {
+  async create(dto: CreateDeliveryDto, scope: TenantScope, guardUserId: string): Promise<DeliveryResponseDto> {
     const guard = await this.guardContext.resolveOrThrow(guardUserId);
     assertSocietyMatch(guard.societyId, scope);
     assertGateMatch(dto.gateId, guard.gateId);
-
-    if (dto.idempotencyKey) {
-      const existing = await this.deliveries.findOne({ where: { idempotencyKey: dto.idempotencyKey } });
-      if (existing) return toView(existing);
-    }
 
     const flat = await this.flats.findOne({ where: { id: dto.flatId } });
     if (!flat) throw new NotFoundException('Flat not found');
@@ -106,6 +89,11 @@ export class DeliveryService {
     }
 
     const agent = await this.findOrCreateAgent(dto.agentPhone, dto.agentName, dto.platform);
+
+    if (dto.idempotencyKey) {
+      const existing = await this.deliveries.findOne({ where: { idempotencyKey: dto.idempotencyKey } });
+      if (existing) return toDeliveryView(existing, flat, agent);
+    }
 
     const otp = generateOtp();
     const now = this.clock.now();
@@ -145,7 +133,7 @@ export class DeliveryService {
 
     await this.notifyResidents(flat, delivery, otp);
 
-    return toView(delivery);
+    return toDeliveryView(delivery, flat, agent);
   }
 
   /**
@@ -235,7 +223,7 @@ export class DeliveryService {
    * both silently accepted without one or the other, and never a client
    * that can just skip straight to `handed_over` with no evidence at all.
    */
-  async updateStatus(deliveryId: string, dto: UpdateDeliveryStatusDto, scope: TenantScope, guardUserId: string): Promise<DeliveryView> {
+  async updateStatus(deliveryId: string, dto: UpdateDeliveryStatusDto, scope: TenantScope, guardUserId: string): Promise<DeliveryResponseDto> {
     const guard = await this.guardContext.resolveOrThrow(guardUserId);
     assertSocietyMatch(guard.societyId, scope);
 
@@ -261,10 +249,16 @@ export class DeliveryService {
     }
 
     const saved = await this.deliveries.save(delivery);
-    return toView(saved);
+
+    const [agent, flat] = await Promise.all([
+      this.agents.findOne({ where: { id: saved.agentId } }),
+      this.flats.findOne({ where: { id: saved.flatId } }),
+    ]);
+    if (!agent || !flat) throw new NotFoundException('Delivery agent or flat no longer exists');
+    return toDeliveryView(saved, flat, agent);
   }
 
-  async listForFlat(flatId: string, status: string | undefined, scope: TenantScope): Promise<DeliveryView[]> {
+  async listForFlat(flatId: string, status: string | undefined, scope: TenantScope): Promise<DeliveryResponseDto[]> {
     const flat = await this.flats.findOne({ where: { id: flatId } });
     if (!flat) throw new NotFoundException('Flat not found');
     assertSocietyMatch(flat.societyId, scope);
@@ -274,6 +268,14 @@ export class DeliveryService {
     if (status) where.status = status;
 
     const rows = await this.deliveries.find({ where, order: { createdAt: 'DESC' } });
-    return rows.map(toView);
+    if (rows.length === 0) return [];
+
+    const agentIds = [...new Set(rows.map((d) => d.agentId))];
+    const agentRows = await this.agents.find({ where: { id: In(agentIds) } });
+    const agentsById = new Map(agentRows.map((a) => [a.id, a]));
+
+    return rows
+      .filter((d) => agentsById.has(d.agentId))
+      .map((d) => toDeliveryView(d, flat, agentsById.get(d.agentId)!));
   }
 }

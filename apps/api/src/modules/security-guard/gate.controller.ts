@@ -1,7 +1,9 @@
 import { Body, Controller, Post } from '@nestjs/common';
+import { ApiCreatedResponse } from '@nestjs/swagger';
 import { GateService } from './gate.service';
 import { GateScanDto } from './dto/gate-scan.dto';
 import { GateManualEntryDto } from './dto/gate-manual-entry.dto';
+import { GateLogResponseDto } from './dto/gate-log-response.dto';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenantScope } from '../../common/decorators/tenant-scope.decorator';
@@ -14,6 +16,7 @@ export class GateController {
 
   @Post('scan')
   @RequirePermission('gate:scan')
+  @ApiCreatedResponse({ type: GateLogResponseDto })
   scan(
     @Body() dto: GateScanDto,
     @CurrentTenantScope() scope: TenantScope,
@@ -24,6 +27,7 @@ export class GateController {
 
   @Post('manual-entry')
   @RequirePermission('gate:checkin')
+  @ApiCreatedResponse({ type: GateLogResponseDto })
   manualEntry(
     @Body() dto: GateManualEntryDto,
     @CurrentTenantScope() scope: TenantScope,

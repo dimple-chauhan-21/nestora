@@ -21,8 +21,10 @@ function extractOtp(message: string): string {
 /** Minimal in-memory Repository<T> stand-in — only the methods DeliveryService actually calls. */
 class FakeRepo<T extends { id: string }> {
   rows: T[] = [];
+  constructor(private readonly clock?: Clock) {}
   create(partial: Partial<T>): T {
-    return { id: randomUUID(), ...partial } as T;
+    const now = this.clock?.now() ?? new Date();
+    return { id: randomUUID(), createdAt: now, updatedAt: now, ...partial } as unknown as T;
   }
   async save(row: T): Promise<T> {
     const i = this.rows.findIndex((r) => r.id === row.id);
@@ -86,13 +88,13 @@ const GUARD_SCOPE: TenantScope = { societyId, flatId: null, isPlatformScope: fal
 
 function buildService(startTime = new Date('2026-03-01T00:00:00.000Z')) {
   const clock = new FakeClock(startTime);
-  const deliveries = new FakeRepo<Delivery>();
-  const agents = new FakeRepo<DeliveryAgent>();
-  const flats = new FakeRepo<Flat>();
-  const residents = new FakeRepo<Resident>();
-  const users = new FakeRepo<User>();
+  const deliveries = new FakeRepo<Delivery>(clock);
+  const agents = new FakeRepo<DeliveryAgent>(clock);
+  const flats = new FakeRepo<Flat>(clock);
+  const residents = new FakeRepo<Resident>(clock);
+  const users = new FakeRepo<User>(clock);
 
-  flats.rows.push({ id: flatId, societyId, status: 'occupied' } as Flat);
+  flats.rows.push({ id: flatId, societyId, status: 'occupied', flatNumber: 'A-101' } as Flat);
 
   // Every test gets one active resident with a phone by default, so the
   // service's own notifyResidents() (push + SMS) always has someone to

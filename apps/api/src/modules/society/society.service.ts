@@ -11,6 +11,7 @@ import { CreateSocietyDto } from './dto/create-society.dto';
 import { UpdateSocietySettingsDto } from './dto/update-society-settings.dto';
 import { CreateAmenityDto } from './dto/create-amenity.dto';
 import { CreateSocietyDocumentDto } from './dto/create-society-document.dto';
+import { FlatSummaryDto } from './dto/flat-summary.dto';
 import { applySocietyScope, assertSocietyMatch } from '../../common/tenant-scope/tenant-scope.util';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
 
@@ -102,14 +103,20 @@ export class SocietyService {
     return this.settings.save(existing);
   }
 
-  async listFlats(societyId: string, scope: TenantScope): Promise<Flat[]> {
+  async listFlats(societyId: string, scope: TenantScope): Promise<FlatSummaryDto[]> {
     assertSocietyMatch(societyId, scope);
     const qb = applySocietyScope(
       this.flats.createQueryBuilder('flat').where('flat.society_id = :societyId', { societyId }),
       'flat',
       scope,
     );
-    return qb.orderBy('flat.flat_number', 'ASC').getMany();
+    const rows = await qb.orderBy('flat.flat_number', 'ASC').getMany();
+    return rows.map((flat) => ({
+      id: flat.id,
+      flatNumber: flat.flatNumber,
+      floorNumber: flat.floorNumber,
+      status: flat.status,
+    }));
   }
 
   async createAmenity(

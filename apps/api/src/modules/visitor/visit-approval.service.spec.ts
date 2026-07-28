@@ -188,7 +188,7 @@ describe('VisitApprovalService', () => {
     blacklist = new FakeRepo<VisitorBlacklist>();
     notifications = new CapturingNotificationProvider();
 
-    flats.rows.push({ id: flatId, societyId } as Flat);
+    flats.rows.push({ id: flatId, societyId, flatNumber: 'A-101' } as Flat);
     const owner = residents.create({
       societyId,
       flatId,
@@ -345,5 +345,29 @@ describe('VisitApprovalService', () => {
     expect(page3.data.map((v) => v.visitor.name)).toEqual(['Visitor A']);
     expect(page3.pagination.hasMore).toBe(false);
     expect(page3.pagination.nextCursor).toBeNull();
+  });
+
+  it('listPendingForSociety() spans every flat in the society (guard dashboard view), oldest-first, embedding each visit\'s own flat', async () => {
+    const secondFlatId = randomUUID();
+    flats.rows.push({ id: secondFlatId, societyId, flatNumber: 'B-202' } as Flat);
+
+    await service.createWalkIn(flatId, { flatId, name: 'Flat A Visitor' }, PLATFORM_SCOPE, 'guard-1');
+    clock.advance(1000);
+    await service.createWalkIn(secondFlatId, { flatId: secondFlatId, name: 'Flat B Visitor' }, PLATFORM_SCOPE, 'guard-1');
+    clock.advance(1000);
+    const thirdVisit = await service.createWalkIn(
+      flatId,
+      { flatId, name: 'Flat A Visitor 2' },
+      PLATFORM_SCOPE,
+      'guard-1',
+    );
+    // Approved visits shouldn't show up in the guard's pending queue.
+    await service.approve(thirdVisit.id, PLATFORM_SCOPE, ownerUserId);
+
+    const pending = await service.listPendingForSociety(societyId);
+
+    expect(pending.map((v) => v.visitor.name)).toEqual(['Flat A Visitor', 'Flat B Visitor']);
+    expect(pending[0]!.flat).toEqual({ id: flatId, flatNumber: 'A-101' });
+    expect(pending[1]!.flat).toEqual({ id: secondFlatId, flatNumber: 'B-202' });
   });
 });

@@ -14,8 +14,24 @@ import type { TenantScope } from '../../common/interceptors/tenant-scope.interce
 import { assertSocietyMatch } from '../../common/tenant-scope/tenant-scope.util';
 import { GateScanDto } from './dto/gate-scan.dto';
 import { GateManualEntryDto } from './dto/gate-manual-entry.dto';
+import { GateLogResponseDto } from './dto/gate-log-response.dto';
 
 const CLIENT_TIMESTAMP_SANITY_BOUND_MS = 24 * 60 * 60 * 1000; // 24h, per session decision
+
+function toGateLogResponseDto(log: GateLog): GateLogResponseDto {
+  return {
+    id: log.id,
+    gateId: log.gateId,
+    guardId: log.guardId,
+    entityType: log.entityType,
+    visitorVisitId: log.visitorVisitId,
+    direction: log.direction,
+    method: log.method,
+    overrideReason: log.overrideReason,
+    idempotencyKey: log.idempotencyKey,
+    occurredAt: log.occurredAt.toISOString(),
+  };
+}
 
 @Injectable()
 export class GateService {
@@ -64,7 +80,7 @@ export class GateService {
     return this.gateLogs.save(log);
   }
 
-  async scan(dto: GateScanDto, scope: TenantScope, guardUserId: string): Promise<GateLog> {
+  async scan(dto: GateScanDto, scope: TenantScope, guardUserId: string): Promise<GateLogResponseDto> {
     const guard = await this.guardContext.resolveOrThrow(guardUserId);
     assertSocietyMatch(guard.societyId, scope);
     assertGateMatch(dto.gateId, guard.gateId);
@@ -92,7 +108,7 @@ export class GateService {
         await this.parkingService.releaseVisitorParking(visit.id);
       }
 
-      return this.writeGateLog({
+      const log = await this.writeGateLog({
         societyId: guard.societyId,
         gateId: dto.gateId,
         guardId: guard.id,
@@ -104,13 +120,14 @@ export class GateService {
         idempotencyKey,
         occurredAtClientReported,
       });
+      return toGateLogResponseDto(log);
     }
 
     // guest_invite
     const invite = await this.guestInviteService.resolveByToken(dto.token);
     await this.guestInviteService.consume(invite.id);
 
-    return this.writeGateLog({
+    const log = await this.writeGateLog({
       societyId: guard.societyId,
       gateId: dto.gateId,
       guardId: guard.id,
@@ -122,9 +139,10 @@ export class GateService {
       idempotencyKey,
       occurredAtClientReported,
     });
+    return toGateLogResponseDto(log);
   }
 
-  async manualEntry(dto: GateManualEntryDto, scope: TenantScope, guardUserId: string): Promise<GateLog> {
+  async manualEntry(dto: GateManualEntryDto, scope: TenantScope, guardUserId: string): Promise<GateLogResponseDto> {
     const guard = await this.guardContext.resolveOrThrow(guardUserId);
     assertSocietyMatch(guard.societyId, scope);
     assertGateMatch(dto.gateId, guard.gateId);
@@ -132,7 +150,7 @@ export class GateService {
     const idempotencyKey = dto.idempotencyKey ?? randomUUID();
     const occurredAtClientReported = this.sanitizeClientTimestamp(dto.occurredAtClientReported);
 
-    return this.writeGateLog({
+    const log = await this.writeGateLog({
       societyId: guard.societyId,
       gateId: dto.gateId,
       guardId: guard.id,
@@ -144,5 +162,6 @@ export class GateService {
       idempotencyKey,
       occurredAtClientReported,
     });
+    return toGateLogResponseDto(log);
   }
 }

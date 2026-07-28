@@ -8,6 +8,7 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { buildUploadOptions, CSV_MIME_TYPES, MAX_CSV_UPLOAD_BYTES } from '../../common/upload/file-validation.util';
 import { SocietyService } from './society.service';
@@ -15,6 +16,7 @@ import { CreateSocietyDto } from './dto/create-society.dto';
 import { UpdateSocietySettingsDto } from './dto/update-society-settings.dto';
 import { CreateAmenityDto } from './dto/create-amenity.dto';
 import { CreateSocietyDocumentDto } from './dto/create-society-document.dto';
+import { FlatSummaryDto } from './dto/flat-summary.dto';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenantScope } from '../../common/decorators/tenant-scope.decorator';
@@ -50,7 +52,8 @@ export class SocietyController {
 
   @Get(':id/flats')
   @RequirePermission('society:read')
-  listFlats(@Param('id') id: string, @CurrentTenantScope() scope: TenantScope) {
+  @ApiOkResponse({ type: [FlatSummaryDto] })
+  listFlats(@Param('id') id: string, @CurrentTenantScope() scope: TenantScope): Promise<FlatSummaryDto[]> {
     return this.societyService.listFlats(id, scope);
   }
 

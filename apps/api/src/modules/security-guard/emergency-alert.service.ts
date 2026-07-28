@@ -7,6 +7,23 @@ import { assertSocietyMatch } from '../../common/tenant-scope/tenant-scope.util'
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
 import { RaiseEmergencyAlertDto } from './dto/raise-emergency-alert.dto';
 import { ResolveEmergencyAlertDto } from './dto/resolve-emergency-alert.dto';
+import { EmergencyAlertResponseDto } from './dto/emergency-alert-response.dto';
+
+/** Exported (not a private method) so GuardService can reuse it for the dashboard's activeAlerts. */
+export function toEmergencyAlertResponseDto(
+  alert: EmergencyAlert,
+  requestingUserId: string,
+): EmergencyAlertResponseDto {
+  return {
+    id: alert.id,
+    type: alert.type,
+    status: alert.status,
+    resolutionNote: alert.resolutionNote,
+    resolvedAt: alert.resolvedAt ? alert.resolvedAt.toISOString() : null,
+    raisedByMe: alert.raisedBy === requestingUserId,
+    createdAt: alert.createdAt.toISOString(),
+  };
+}
 
 @Injectable()
 export class EmergencyAlertService {
@@ -15,7 +32,11 @@ export class EmergencyAlertService {
     private readonly guardContext: GuardContextService,
   ) {}
 
-  async raise(dto: RaiseEmergencyAlertDto, scope: TenantScope, raisedByUserId: string): Promise<EmergencyAlert> {
+  async raise(
+    dto: RaiseEmergencyAlertDto,
+    scope: TenantScope,
+    raisedByUserId: string,
+  ): Promise<EmergencyAlertResponseDto> {
     const guard = await this.guardContext.resolveOrThrow(raisedByUserId);
     assertSocietyMatch(guard.societyId, scope);
 
@@ -25,7 +46,8 @@ export class EmergencyAlertService {
       type: dto.type,
       status: 'active',
     });
-    return this.alerts.save(alert);
+    const saved = await this.alerts.save(alert);
+    return toEmergencyAlertResponseDto(saved, raisedByUserId);
   }
 
   /**
@@ -39,7 +61,7 @@ export class EmergencyAlertService {
     dto: ResolveEmergencyAlertDto,
     scope: TenantScope,
     resolverId: string,
-  ): Promise<EmergencyAlert> {
+  ): Promise<EmergencyAlertResponseDto> {
     const alert = await this.alerts.findOne({ where: { id: alertId } });
     if (!alert) throw new NotFoundException('Alert not found');
     assertSocietyMatch(alert.societyId, scope);
@@ -55,6 +77,7 @@ export class EmergencyAlertService {
     alert.resolutionNote = dto.resolutionNote;
     alert.resolvedBy = resolverId;
     alert.resolvedAt = new Date();
-    return this.alerts.save(alert);
+    const saved = await this.alerts.save(alert);
+    return toEmergencyAlertResponseDto(saved, resolverId);
   }
 }

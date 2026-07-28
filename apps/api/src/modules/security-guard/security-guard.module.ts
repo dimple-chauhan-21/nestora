@@ -9,6 +9,7 @@ import { VisitorVisit } from '../../database/entities/visitor-visit.entity';
 import { Resident } from '../../database/entities/resident.entity';
 import { Flat } from '../../database/entities/flat.entity';
 import { Delivery } from '../../database/entities/delivery.entity';
+import { DeliveryAgent } from '../../database/entities/delivery-agent.entity';
 
 import { AuthModule } from '../auth/auth.module';
 import { VisitorModule } from '../visitor/visitor.module';
@@ -29,7 +30,18 @@ import { GuardContextService } from './guard-context.service';
     VisitorModule,
     ParkingModule,
     NotificationModule,
-    TenantScopedTypeOrmModule.forFeature([Guard, Gate, GateLog, EmergencyAlert, ShiftReport, VisitorVisit, Resident, Flat, Delivery]),
+    TenantScopedTypeOrmModule.forFeature([
+      Guard,
+      Gate,
+      GateLog,
+      EmergencyAlert,
+      ShiftReport,
+      VisitorVisit,
+      Resident,
+      Flat,
+      Delivery,
+      DeliveryAgent,
+    ]),
   ],
   controllers: [GuardController, GateCallController, GateController, EmergencyAlertController],
   providers: [GuardService, GateService, EmergencyAlertService, GuardContextService],
