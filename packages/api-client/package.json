@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "@nestora/config": "workspace:*",
-    "typescript": "^5.6.0",
+    "typescript": "^7.0.2",
     "eslint": "^9.15.0"
   }
 }
