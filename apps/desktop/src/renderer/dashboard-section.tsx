@@ -2,18 +2,11 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import { Card, CardContent } from '@nestora/ui';
 import { formatIst } from '@nestora/utils';
 import type { components } from '@nestora/types';
+import { initials } from './initials';
 
 type GuardDashboard = components['schemas']['GuardDashboardResponseDto'];
 type Visit = GuardDashboard['pendingVisits'][number];
 type Delivery = GuardDashboard['pendingDeliveries'][number];
-
-function initials(name: string | null): string {
-  if (!name) return '?';
-  const parts = name.trim().split(/\s+/);
-  const first = parts[0]?.[0] ?? '';
-  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
-  return (first + last).toUpperCase() || '?';
-}
 
 function Avatar({ name, photoUrl }: { name: string | null; photoUrl?: string | null }) {
   if (photoUrl) {

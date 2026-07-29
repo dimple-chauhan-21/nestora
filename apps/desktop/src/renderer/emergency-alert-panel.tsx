@@ -26,6 +26,16 @@ interface EmergencyAlertPanelProps {
  * must never fire from a stray tap. Raising is a two-step flow: pick a type
  * (reveals the confirm step), then press a second, distinctly red "Confirm"
  * button — a single click never raises an alert.
+ *
+ * Exactly one call-to-action is on screen at a time (type-select, or
+ * confirm, or a bare pending indicator, or the failure banner) — never the
+ * confirm card and the failure banner together. "Confirm — Raise Alert" and
+ * the failure banner's "Retry now" both do the same thing (re-attempt
+ * raising the already-chosen type), so showing both at once would just make
+ * a guard guess which button to press mid-emergency. Once they've confirmed
+ * once, a failed attempt doesn't re-prompt for confirmation — it goes
+ * straight to "Retry now", since re-confirming an already-explicit choice
+ * during an active emergency costs time for no safety benefit.
  */
 export function EmergencyAlertPanel({ accessToken, activeAlerts }: EmergencyAlertPanelProps) {
   const queryClient = useQueryClient();
@@ -43,6 +53,13 @@ export function EmergencyAlertPanel({ accessToken, activeAlerts }: EmergencyAler
     },
   });
 
+  function cancel() {
+    raise.reset();
+    setPendingType(null);
+  }
+
+  const pendingLabel = ALERT_TYPES.find((t) => t.value === pendingType)?.label;
+
   return (
     <Card className="border-destructive/50">
       <CardHeader>
@@ -50,7 +67,7 @@ export function EmergencyAlertPanel({ accessToken, activeAlerts }: EmergencyAler
         <CardDescription>Fire, medical, or security emergency at the gate.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {pendingType === null ? (
+        {pendingType === null && (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {ALERT_TYPES.map((t) => (
               <button
@@ -63,36 +80,34 @@ export function EmergencyAlertPanel({ accessToken, activeAlerts }: EmergencyAler
               </button>
             ))}
           </div>
-        ) : (
+        )}
+
+        {pendingType !== null && raise.status === 'idle' && (
           <div className="space-y-3 rounded-md border-2 border-destructive bg-destructive/10 p-4">
-            <p className="font-semibold text-destructive">
-              Confirm {ALERT_TYPES.find((t) => t.value === pendingType)?.label} emergency alert?
-            </p>
+            <p className="font-semibold text-destructive">Confirm {pendingLabel} emergency alert?</p>
             <p className="text-sm text-destructive/80">This immediately notifies residents and society staff.</p>
             <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                disabled={raise.isPending}
-                onClick={() => setPendingType(null)}
-              >
+              <Button type="button" variant="outline" className="flex-1" onClick={cancel}>
                 Cancel
               </Button>
               <Button
                 type="button"
                 className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                disabled={raise.isPending}
                 onClick={() => raise.mutate(pendingType)}
               >
-                {raise.isPending && <Spinner />}
                 Confirm — Raise Alert
               </Button>
             </div>
           </div>
         )}
 
-        {raise.isError && (
+        {pendingType !== null && raise.status === 'pending' && (
+          <div className="flex items-center gap-2 rounded-md border-2 border-destructive bg-destructive/10 p-4 font-semibold text-destructive">
+            <Spinner /> Raising {pendingLabel} alert…
+          </div>
+        )}
+
+        {pendingType !== null && raise.status === 'error' && (
           <Alert variant="destructive">
             <AlertTitle>Alert not sent</AlertTitle>
             <AlertDescription className="flex flex-col gap-2">
@@ -101,14 +116,19 @@ export function EmergencyAlertPanel({ accessToken, activeAlerts }: EmergencyAler
                   ? raise.error.message
                   : 'The emergency alert could not be sent. Check the connection and try again immediately, or use another means to raise the alarm.'}
               </span>
-              <Button
-                type="button"
-                size="sm"
-                className="w-fit bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => pendingType && raise.mutate(pendingType)}
-              >
-                Retry now
-              </Button>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={cancel}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={() => raise.mutate(pendingType)}
+                >
+                  Retry now
+                </Button>
+              </div>
             </AlertDescription>
           </Alert>
         )}
