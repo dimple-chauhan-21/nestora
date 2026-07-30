@@ -7,3 +7,7 @@ export { FormField, type FormFieldProps } from './components/form-field';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './components/card';
 export { Spinner, type SpinnerProps } from './components/spinner';
 export { Alert, AlertTitle, AlertDescription } from './components/alert';
+export { Badge, badgeVariants, type BadgeProps } from './components/badge';
+export { Select, type SelectProps } from './components/select';
+export { Textarea, type TextareaProps } from './components/textarea';
+export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from './components/table';

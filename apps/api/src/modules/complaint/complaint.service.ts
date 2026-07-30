@@ -1,12 +1,13 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Complaint, ComplaintStatus } from '../../database/entities/complaint.entity';
+import { In, Repository } from 'typeorm';
+import { Complaint, ComplaintPriority, ComplaintStatus } from '../../database/entities/complaint.entity';
 import { ComplaintCategory } from '../../database/entities/complaint-category.entity';
 import { ComplaintAttachment } from '../../database/entities/complaint-attachment.entity';
 import { ComplaintComment } from '../../database/entities/complaint-comment.entity';
 import { ComplaintEscalation } from '../../database/entities/complaint-escalation.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
+import { User } from '../../database/entities/user.entity';
 import { Flat } from '../../database/entities/flat.entity';
 import { NOTIFICATION_PROVIDER, type NotificationProvider } from '../notification/notification-provider.interface';
 import { CLOCK, type Clock } from '../../common/clock';
@@ -18,6 +19,9 @@ import { AssignComplaintDto } from './dto/assign-complaint.dto';
 import { UpdateComplaintStatusDto } from './dto/update-complaint-status.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { SubmitFeedbackDto } from './dto/submit-feedback.dto';
+import { ComplaintResponseDto } from './dto/complaint-response.dto';
+import { ComplaintCommentResponseDto } from './dto/complaint-comment-response.dto';
+import { AssignableStaffDto } from './dto/assignable-staff.dto';
 
 /**
  * Priority -> SLA hours, per §8's own user-flow example ("Urgent = 4-hour
@@ -35,7 +39,12 @@ const PRIORITY_SLA_HOURS: Record<string, number> = {
   low: 168,
 };
 
-const MANAGER_ROLE_CODES = ['society_admin', 'society_manager'];
+/** Also the assignable-staff pool (§8's assign-to-staff action) — the same people ComplaintService already escalates SLA breaches to. */
+export const MANAGER_ROLE_CODES = ['society_admin', 'society_manager'];
+
+function toUserDto(user: User | null | undefined): { id: string; phone: string | null } | null {
+  return user ? { id: user.id, phone: user.phone } : null;
+}
 
 @Injectable()
 export class ComplaintService {
@@ -48,10 +57,67 @@ export class ComplaintService {
     @InjectRepository(ComplaintComment) private readonly comments: Repository<ComplaintComment>,
     @InjectRepository(ComplaintEscalation) private readonly escalations: Repository<ComplaintEscalation>,
     @InjectRepository(UserRole) private readonly userRoles: Repository<UserRole>,
+    @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Flat) private readonly flats: Repository<Flat>,
     @Inject(NOTIFICATION_PROVIDER) private readonly notifications: NotificationProvider,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
+
+  /** Single-complaint embed — used by every write endpoint (create/assign/updateStatus/submitFeedback), each of which only ever touches one row, so batching isn't relevant here (see toComplaintResponseDtoBatch for `list()`). */
+  private async toResponseDto(complaint: Complaint): Promise<ComplaintResponseDto> {
+    const [flat, category, raisedByUser, assignedToUser] = await Promise.all([
+      this.flats.findOne({ where: { id: complaint.flatId } }),
+      this.categories.findOne({ where: { id: complaint.categoryId } }),
+      this.users.findOne({ where: { id: complaint.raisedBy } }),
+      complaint.assignedTo ? this.users.findOne({ where: { id: complaint.assignedTo } }) : Promise.resolve(null),
+    ]);
+    return {
+      id: complaint.id,
+      flat: { id: complaint.flatId, flatNumber: flat?.flatNumber ?? '—' },
+      category: { id: complaint.categoryId, name: category?.name ?? '—' },
+      raisedBy: toUserDto(raisedByUser),
+      assignedTo: toUserDto(assignedToUser),
+      priority: complaint.priority,
+      description: complaint.description,
+      status: complaint.status,
+      slaDueAt: complaint.slaDueAt.toISOString(),
+      resolvedAt: complaint.resolvedAt ? complaint.resolvedAt.toISOString() : null,
+      satisfactionRating: complaint.satisfactionRating,
+      createdAt: complaint.createdAt.toISOString(),
+    };
+  }
+
+  /** Batched embed for `list()` — N complaints, 4 lookup queries total (flats/categories/raisedBy/assignedTo), never N+1. */
+  private async toResponseDtoBatch(rows: Complaint[]): Promise<ComplaintResponseDto[]> {
+    const flatIds = [...new Set(rows.map((c) => c.flatId))];
+    const categoryIds = [...new Set(rows.map((c) => c.categoryId))];
+    const userIds = [
+      ...new Set([...rows.map((c) => c.raisedBy), ...rows.map((c) => c.assignedTo).filter((id): id is string => id !== null)]),
+    ];
+    const [flatRows, categoryRows, userRows] = await Promise.all([
+      flatIds.length ? this.flats.find({ where: { id: In(flatIds) } }) : Promise.resolve([]),
+      categoryIds.length ? this.categories.find({ where: { id: In(categoryIds) } }) : Promise.resolve([]),
+      userIds.length ? this.users.find({ where: { id: In(userIds) } }) : Promise.resolve([]),
+    ]);
+    const flatsById = new Map(flatRows.map((f) => [f.id, f]));
+    const categoriesById = new Map(categoryRows.map((c) => [c.id, c]));
+    const usersById = new Map(userRows.map((u) => [u.id, u]));
+
+    return rows.map((complaint) => ({
+      id: complaint.id,
+      flat: { id: complaint.flatId, flatNumber: flatsById.get(complaint.flatId)?.flatNumber ?? '—' },
+      category: { id: complaint.categoryId, name: categoriesById.get(complaint.categoryId)?.name ?? '—' },
+      raisedBy: toUserDto(usersById.get(complaint.raisedBy)),
+      assignedTo: complaint.assignedTo ? toUserDto(usersById.get(complaint.assignedTo)) : null,
+      priority: complaint.priority,
+      description: complaint.description,
+      status: complaint.status,
+      slaDueAt: complaint.slaDueAt.toISOString(),
+      resolvedAt: complaint.resolvedAt ? complaint.resolvedAt.toISOString() : null,
+      satisfactionRating: complaint.satisfactionRating,
+      createdAt: complaint.createdAt.toISOString(),
+    }));
+  }
 
   async createCategory(dto: CreateComplaintCategoryDto): Promise<ComplaintCategory> {
     const category = this.categories.create({
@@ -75,7 +141,7 @@ export class ComplaintService {
     return complaint;
   }
 
-  async create(dto: CreateComplaintDto, scope: TenantScope, actorId: string): Promise<Complaint> {
+  async create(dto: CreateComplaintDto, scope: TenantScope, actorId: string): Promise<ComplaintResponseDto> {
     const flat = await this.loadFlatOrThrow(dto.flatId);
     assertSocietyMatch(flat.societyId, scope);
     assertFlatMatch(flat.id, scope);
@@ -109,7 +175,7 @@ export class ComplaintService {
       );
     }
 
-    return saved;
+    return this.toResponseDto(saved);
   }
 
   /**
@@ -119,9 +185,14 @@ export class ComplaintService {
    * not this. Both share the same idempotent escalateOverdueComplaints.
    */
   async list(
-    query: { status?: ComplaintStatus | undefined; categoryId?: string | undefined; flatId?: string | undefined },
+    query: {
+      status?: ComplaintStatus | undefined;
+      priority?: ComplaintPriority | undefined;
+      categoryId?: string | undefined;
+      flatId?: string | undefined;
+    },
     scope: TenantScope,
-  ): Promise<Complaint[]> {
+  ): Promise<ComplaintResponseDto[]> {
     if (scope.societyId) {
       await this.escalateOverdueComplaints(scope.societyId, this.clock.now());
     }
@@ -129,22 +200,32 @@ export class ComplaintService {
     let qb = this.complaints.createQueryBuilder('complaint');
     qb = applyResidentScope(qb, 'complaint', scope);
     if (query.status) qb = qb.andWhere('complaint.status = :status', { status: query.status });
+    if (query.priority) qb = qb.andWhere('complaint.priority = :priority', { priority: query.priority });
     if (query.categoryId) qb = qb.andWhere('complaint.category_id = :categoryId', { categoryId: query.categoryId });
     if (query.flatId) qb = qb.andWhere('complaint.flat_id = :flatId', { flatId: query.flatId });
 
-    return qb.orderBy('complaint.created_at', 'DESC').getMany();
+    const rows = await qb.orderBy('complaint.created_at', 'DESC').getMany();
+    return this.toResponseDtoBatch(rows);
   }
 
-  async assign(complaintId: string, dto: AssignComplaintDto, scope: TenantScope): Promise<Complaint> {
+  async findById(complaintId: string, scope: TenantScope): Promise<ComplaintResponseDto> {
+    const complaint = await this.loadComplaintOrThrow(complaintId);
+    assertSocietyMatch(complaint.societyId, scope);
+    assertFlatMatch(complaint.flatId, scope);
+    return this.toResponseDto(complaint);
+  }
+
+  async assign(complaintId: string, dto: AssignComplaintDto, scope: TenantScope): Promise<ComplaintResponseDto> {
     const complaint = await this.loadComplaintOrThrow(complaintId);
     assertSocietyMatch(complaint.societyId, scope);
 
     complaint.assignedTo = dto.assignedTo;
     complaint.status = 'assigned';
-    return this.complaints.save(complaint);
+    const saved = await this.complaints.save(complaint);
+    return this.toResponseDto(saved);
   }
 
-  async updateStatus(complaintId: string, dto: UpdateComplaintStatusDto, scope: TenantScope): Promise<Complaint> {
+  async updateStatus(complaintId: string, dto: UpdateComplaintStatusDto, scope: TenantScope): Promise<ComplaintResponseDto> {
     const complaint = await this.loadComplaintOrThrow(complaintId);
     assertSocietyMatch(complaint.societyId, scope);
 
@@ -169,10 +250,15 @@ export class ComplaintService {
       this.logger.error(`Failed to send status-change notification for complaint ${saved.id}: ${(err as Error).message}`);
     }
 
-    return saved;
+    return this.toResponseDto(saved);
   }
 
-  async addComment(complaintId: string, dto: CreateCommentDto, scope: TenantScope, actorId: string): Promise<ComplaintComment> {
+  async addComment(
+    complaintId: string,
+    dto: CreateCommentDto,
+    scope: TenantScope,
+    actorId: string,
+  ): Promise<ComplaintCommentResponseDto> {
     const complaint = await this.loadComplaintOrThrow(complaintId);
     assertSocietyMatch(complaint.societyId, scope);
     assertFlatMatch(complaint.flatId, scope);
@@ -188,26 +274,47 @@ export class ComplaintService {
       body: dto.body,
       isInternal,
     });
-    return this.comments.save(comment);
+    const saved = await this.comments.save(comment);
+    const author = await this.users.findOne({ where: { id: actorId } });
+    return {
+      id: saved.id,
+      author: toUserDto(author),
+      body: saved.body,
+      isInternal: saved.isInternal,
+      createdAt: saved.createdAt.toISOString(),
+    };
   }
 
   /**
    * Field/query-level filtering, not row-level: the complaint itself stays
    * visible to a resident-scoped caller, only `is_internal` comment rows
    * within it are excluded from the response (deliverable #5's explicit
-   * instruction).
+   * instruction). Author embedding happens after the filter, batched over
+   * whatever survives it.
    */
-  async listComments(complaintId: string, scope: TenantScope): Promise<ComplaintComment[]> {
+  async listComments(complaintId: string, scope: TenantScope): Promise<ComplaintCommentResponseDto[]> {
     const complaint = await this.loadComplaintOrThrow(complaintId);
     assertSocietyMatch(complaint.societyId, scope);
     assertFlatMatch(complaint.flatId, scope);
 
     const allComments = await this.comments.find({ where: { complaintId }, order: { createdAt: 'ASC' } });
-    if (scope.isPlatformScope || scope.flatId === null) return allComments;
-    return allComments.filter((c) => !c.isInternal);
+    const visible =
+      scope.isPlatformScope || scope.flatId === null ? allComments : allComments.filter((c) => !c.isInternal);
+
+    const authorIds = [...new Set(visible.map((c) => c.authorId))];
+    const authorRows = authorIds.length ? await this.users.find({ where: { id: In(authorIds) } }) : [];
+    const authorsById = new Map(authorRows.map((u) => [u.id, u]));
+
+    return visible.map((comment) => ({
+      id: comment.id,
+      author: toUserDto(authorsById.get(comment.authorId)),
+      body: comment.body,
+      isInternal: comment.isInternal,
+      createdAt: comment.createdAt.toISOString(),
+    }));
   }
 
-  async submitFeedback(complaintId: string, dto: SubmitFeedbackDto, scope: TenantScope): Promise<Complaint> {
+  async submitFeedback(complaintId: string, dto: SubmitFeedbackDto, scope: TenantScope): Promise<ComplaintResponseDto> {
     const complaint = await this.loadComplaintOrThrow(complaintId);
     assertSocietyMatch(complaint.societyId, scope);
     assertFlatMatch(complaint.flatId, scope);
@@ -230,7 +337,7 @@ export class ComplaintService {
       );
     }
 
-    return saved;
+    return this.toResponseDto(saved);
   }
 
   private async findManagerForSociety(societyId: string): Promise<string | null> {
@@ -243,6 +350,23 @@ export class ComplaintService {
       .andWhere('r.code IN (:...codes)', { codes: MANAGER_ROLE_CODES })
       .getOne();
     return managerRole?.userId ?? null;
+  }
+
+  /** Deliverable #4's "assign to staff" dropdown — society_admin/society_manager users for this society, same pool as findManagerForSociety but the full list, not just one. */
+  async listAssignableStaff(societyId: string, scope: TenantScope): Promise<AssignableStaffDto[]> {
+    assertSocietyMatch(societyId, scope);
+    const rows = await this.userRoles
+      .createQueryBuilder('ur')
+      .innerJoin('roles', 'r', 'r.id = ur.role_id')
+      .innerJoin('users', 'u', 'u.id = ur.user_id')
+      .select(['u.id AS "userId"', 'u.phone AS "phone"', 'r.code AS "roleCode"'])
+      .where('ur.society_id = :societyId', { societyId })
+      .andWhere('ur.flat_id IS NULL')
+      .andWhere('ur.deleted_at IS NULL')
+      .andWhere('r.code IN (:...codes)', { codes: MANAGER_ROLE_CODES })
+      .getRawMany<{ userId: string; phone: string | null; roleCode: string }>();
+
+    return rows.map((row) => ({ id: row.userId, phone: row.phone, roleCode: row.roleCode }));
   }
 
   /**

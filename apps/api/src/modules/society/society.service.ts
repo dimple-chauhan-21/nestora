@@ -12,8 +12,35 @@ import { UpdateSocietySettingsDto } from './dto/update-society-settings.dto';
 import { CreateAmenityDto } from './dto/create-amenity.dto';
 import { CreateSocietyDocumentDto } from './dto/create-society-document.dto';
 import { FlatSummaryDto } from './dto/flat-summary.dto';
+import { SocietyResponseDto } from './dto/society-response.dto';
+import { SocietySettingsResponseDto } from './dto/society-settings-response.dto';
 import { applySocietyScope, assertSocietyMatch } from '../../common/tenant-scope/tenant-scope.util';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
+
+export function toSocietyResponseDto(society: Society): SocietyResponseDto {
+  return {
+    id: society.id,
+    name: society.name,
+    address: society.address,
+    city: society.city,
+    state: society.state,
+    pincode: society.pincode,
+    timezone: society.timezone,
+    currency: society.currency,
+    registrationNumber: society.registrationNumber,
+  };
+}
+
+export function toSocietySettingsResponseDto(settings: SocietySettings): SocietySettingsResponseDto {
+  return {
+    societyId: settings.societyId,
+    billingCycleDay: settings.billingCycleDay,
+    lateFeePct: Number(settings.lateFeePct),
+    fiscalYearStartMonth: settings.fiscalYearStartMonth,
+    featureFlags: settings.featureFlags,
+    updatedAt: settings.updatedAt.toISOString(),
+  };
+}
 
 export interface BulkImportRowError {
   row: number;
@@ -67,7 +94,7 @@ export class SocietyService {
     return society;
   }
 
-  async findById(id: string, scope: TenantScope): Promise<Society> {
+  async findById(id: string, scope: TenantScope): Promise<SocietyResponseDto> {
     assertSocietyMatch(id, scope);
     const qb = applySocietyScope(
       this.societies.createQueryBuilder('society').where('society.id = :id', { id }),
@@ -76,15 +103,10 @@ export class SocietyService {
     );
     const society = await qb.getOne();
     if (!society) throw new NotFoundException('Society not found');
-    return society;
+    return toSocietyResponseDto(society);
   }
 
-  async updateSettings(
-    societyId: string,
-    dto: UpdateSocietySettingsDto,
-    scope: TenantScope,
-    updatedBy: string,
-  ): Promise<SocietySettings> {
+  private async loadSettingsScoped(societyId: string, scope: TenantScope): Promise<SocietySettings> {
     assertSocietyMatch(societyId, scope);
     const qb = applySocietyScope(
       this.settings.createQueryBuilder('settings').where('settings.society_id = :societyId', { societyId }),
@@ -93,6 +115,21 @@ export class SocietyService {
     );
     const existing = await qb.getOne();
     if (!existing) throw new NotFoundException('Society settings not found');
+    return existing;
+  }
+
+  async getSettings(societyId: string, scope: TenantScope): Promise<SocietySettingsResponseDto> {
+    const existing = await this.loadSettingsScoped(societyId, scope);
+    return toSocietySettingsResponseDto(existing);
+  }
+
+  async updateSettings(
+    societyId: string,
+    dto: UpdateSocietySettingsDto,
+    scope: TenantScope,
+    updatedBy: string,
+  ): Promise<SocietySettingsResponseDto> {
+    const existing = await this.loadSettingsScoped(societyId, scope);
 
     if (dto.billingCycleDay !== undefined) existing.billingCycleDay = dto.billingCycleDay;
     if (dto.lateFeePct !== undefined) existing.lateFeePct = String(dto.lateFeePct);
@@ -100,7 +137,8 @@ export class SocietyService {
     if (dto.featureFlags !== undefined) existing.featureFlags = dto.featureFlags;
     existing.updatedBy = updatedBy;
 
-    return this.settings.save(existing);
+    const saved = await this.settings.save(existing);
+    return toSocietySettingsResponseDto(saved);
   }
 
   async listFlats(societyId: string, scope: TenantScope): Promise<FlatSummaryDto[]> {

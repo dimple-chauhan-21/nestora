@@ -13,8 +13,24 @@ import { NOTIFICATION_PROVIDER, type NotificationProvider } from '../notificatio
 import { CLOCK, type Clock } from '../../common/clock';
 import { assertFlatMatch, assertSocietyMatch } from '../../common/tenant-scope/tenant-scope.util';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
+import { BillResponseDto } from './dto/bill-response.dto';
 
 const DUE_DAYS_AFTER_BILLING_PERIOD = 10;
+
+export function toBillResponseDto(bill: Bill): BillResponseDto {
+  return {
+    id: bill.id,
+    flatId: bill.flatId,
+    billingPeriod: bill.billingPeriod,
+    amountDue: bill.amountDue,
+    amountPaid: bill.amountPaid,
+    currency: bill.currency,
+    dueDate: bill.dueDate,
+    status: bill.status,
+    lateFeeApplied: bill.lateFeeApplied,
+    createdAt: bill.createdAt.toISOString(),
+  };
+}
 
 @Injectable()
 export class BillService {
@@ -124,7 +140,7 @@ export class BillService {
     }
   }
 
-  async listForFlat(flatId: string, scope: TenantScope): Promise<Bill[]> {
+  async listForFlat(flatId: string, scope: TenantScope): Promise<BillResponseDto[]> {
     const flat = await this.flats.findOne({ where: { id: flatId } });
     if (!flat) throw new NotFoundException('Flat not found');
     assertSocietyMatch(flat.societyId, scope);
@@ -132,7 +148,8 @@ export class BillService {
 
     await this.applyLateFeesForOverdueBills(flat.societyId);
 
-    return this.bills.find({ where: { flatId }, order: { billingPeriod: 'DESC' } });
+    const rows = await this.bills.find({ where: { flatId }, order: { billingPeriod: 'DESC' } });
+    return rows.map(toBillResponseDto);
   }
 
   async findByIdScoped(billId: string, scope: TenantScope): Promise<Bill> {

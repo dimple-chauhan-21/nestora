@@ -6,18 +6,9 @@ import { BillService } from './bill.service';
 import { CLOCK, type Clock } from '../../common/clock';
 import { assertSocietyMatch } from '../../common/tenant-scope/tenant-scope.util';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
+import { FinancialSummaryResponseDto } from './dto/financial-summary-response.dto';
 
-export interface FinancialSummary {
-  societyId: string;
-  totalBilled: string;
-  totalCollected: string;
-  collectionEfficiencyPct: string;
-  outstandingAging: {
-    days0To30: string;
-    days30To60: string;
-    days60Plus: string;
-  };
-}
+export type FinancialSummary = FinancialSummaryResponseDto;
 
 @Injectable()
 export class FinancialReportService {

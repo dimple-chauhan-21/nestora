@@ -8,6 +8,7 @@ import { UserRole } from '../../database/entities/user-role.entity';
 import { assertSocietyMatch } from '../../common/tenant-scope/tenant-scope.util';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
 import { CreateNoticeDto } from './dto/create-notice.dto';
+import { NoticeResponseDto } from './dto/notice-response.dto';
 
 @Injectable()
 export class NoticeBoardService {
@@ -53,7 +54,7 @@ export class NoticeBoardService {
     return rows.map((r) => r.userId);
   }
 
-  async create(dto: CreateNoticeDto, scope: TenantScope, actorId: string): Promise<Notice> {
+  async create(dto: CreateNoticeDto, scope: TenantScope, actorId: string): Promise<NoticeResponseDto> {
     if (scope.isPlatformScope || !scope.societyId) {
       throw new ForbiddenException('A society-scoped caller is required to publish a notice');
     }
@@ -84,7 +85,16 @@ export class NoticeBoardService {
       await this.attachments.save(this.attachments.create({ societyId, noticeId: saved.id, fileUrl }));
     }
 
-    return saved;
+    return {
+      id: saved.id,
+      title: saved.title,
+      body: saved.body,
+      category: saved.category,
+      isPinned: saved.isPinned,
+      expiresAt: saved.expiresAt ? saved.expiresAt.toISOString() : null,
+      recipientCount: recipients.length,
+      createdAt: saved.createdAt.toISOString(),
+    };
   }
 
   /**

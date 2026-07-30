@@ -6,6 +6,7 @@ import { ComplaintAttachment } from '../../database/entities/complaint-attachmen
 import { ComplaintComment } from '../../database/entities/complaint-comment.entity';
 import { ComplaintEscalation } from '../../database/entities/complaint-escalation.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
+import { User } from '../../database/entities/user.entity';
 import { Flat } from '../../database/entities/flat.entity';
 
 import { ComplaintController } from './complaint.controller';
@@ -24,6 +25,7 @@ import { CLOCK, SystemClock } from '../../common/clock';
       ComplaintComment,
       ComplaintEscalation,
       UserRole,
+      User,
       Flat,
     ]),
     NotificationModule,

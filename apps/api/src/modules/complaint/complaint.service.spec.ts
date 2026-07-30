@@ -7,6 +7,7 @@ import { ComplaintAttachment } from '../../database/entities/complaint-attachmen
 import { ComplaintComment } from '../../database/entities/complaint-comment.entity';
 import { ComplaintEscalation } from '../../database/entities/complaint-escalation.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
+import { User } from '../../database/entities/user.entity';
 import { Flat } from '../../database/entities/flat.entity';
 import type { Clock } from '../../common/clock';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
@@ -23,8 +24,9 @@ class FakeClock implements Clock {
 
 class FakeRepo<T extends { id: string }> {
   rows: T[] = [];
+  constructor(private readonly clock?: Clock) {}
   create(partial: Partial<T>): T {
-    return { id: randomUUID(), ...partial } as unknown as T;
+    return { id: randomUUID(), createdAt: this.clock?.now() ?? new Date(), ...partial } as unknown as T;
   }
   async save(row: T): Promise<T> {
     const i = this.rows.findIndex((r) => r.id === row.id);
@@ -41,7 +43,16 @@ class FakeRepo<T extends { id: string }> {
   }
   async find(options: { where: Partial<Record<string, unknown>> }): Promise<T[]> {
     return this.rows.filter((r) =>
-      Object.entries(options.where).every(([k, v]) => (r as unknown as Record<string, unknown>)[k] === v),
+      Object.entries(options.where).every(([k, v]) => {
+        const rec = r as unknown as Record<string, unknown>;
+        // Duck-types TypeORM's In() FindOperator rather than importing the
+        // real class — this fake only needs to understand the operators the
+        // service actually issues (same pattern as visit-approval.service.spec.ts).
+        if (v && typeof v === 'object' && (v as { _type?: string })._type === 'in') {
+          return ((v as { _value: unknown[] })._value).includes(rec[k]);
+        }
+        return rec[k] === v;
+      }),
     );
   }
 }
@@ -52,15 +63,17 @@ const raisedBy = randomUUID();
 
 function buildService() {
   const clock = new FakeClock();
-  const complaints = new FakeRepo<Complaint>();
-  const categories = new FakeRepo<ComplaintCategory>();
-  const attachments = new FakeRepo<ComplaintAttachment>();
-  const comments = new FakeRepo<ComplaintComment>();
-  const escalations = new FakeRepo<ComplaintEscalation>();
-  const userRoles = new FakeRepo<UserRole>();
-  const flats = new FakeRepo<Flat>();
+  const complaints = new FakeRepo<Complaint>(clock);
+  const categories = new FakeRepo<ComplaintCategory>(clock);
+  const attachments = new FakeRepo<ComplaintAttachment>(clock);
+  const comments = new FakeRepo<ComplaintComment>(clock);
+  const escalations = new FakeRepo<ComplaintEscalation>(clock);
+  const userRoles = new FakeRepo<UserRole>(clock);
+  const users = new FakeRepo<User>(clock);
+  const flats = new FakeRepo<Flat>(clock);
 
-  flats.rows.push({ id: flatId, societyId, status: 'occupied' } as Flat);
+  flats.rows.push({ id: flatId, societyId, status: 'occupied', flatNumber: 'A-101' } as Flat);
+  users.rows.push({ id: raisedBy, phone: '+919812340001', email: null } as User);
   const category = categories.create({
     societyId,
     name: 'Plumbing',
@@ -76,12 +89,13 @@ function buildService() {
     comments as unknown as Repository<ComplaintComment>,
     escalations as unknown as Repository<ComplaintEscalation>,
     userRoles as unknown as Repository<UserRole>,
+    users as unknown as Repository<User>,
     flats as unknown as Repository<Flat>,
     fakeNotifications,
     clock,
   );
 
-  return { service, clock, complaints, categories, comments, category };
+  return { service, clock, complaints, categories, comments, users, category };
 }
 
 const FLAT_SCOPE: TenantScope = { societyId, flatId, isPlatformScope: false };
@@ -96,14 +110,14 @@ describe('ComplaintService.create — priority -> SLA mapping, server-side only'
       raisedBy,
     );
     // Urgent = 4-hour SLA per §8's own example — not category's 999h default.
-    expect(urgent.slaDueAt.getTime()).toBe(clock.now().getTime() + 4 * 60 * 60 * 1000);
+    expect(new Date(urgent.slaDueAt).getTime()).toBe(clock.now().getTime() + 4 * 60 * 60 * 1000);
 
     const low = await service.create(
       { flatId, categoryId: category.id, priority: 'low', description: 'Paint chip' },
       FLAT_SCOPE,
       raisedBy,
     );
-    expect(low.slaDueAt.getTime()).toBe(clock.now().getTime() + 168 * 60 * 60 * 1000);
+    expect(new Date(low.slaDueAt).getTime()).toBe(clock.now().getTime() + 168 * 60 * 60 * 1000);
   });
 
   it('has no parameter anywhere in the call chain for a client to override the computed due date', async () => {
@@ -117,7 +131,7 @@ describe('ComplaintService.create — priority -> SLA mapping, server-side only'
       FLAT_SCOPE,
       raisedBy,
     );
-    expect(complaint.slaDueAt).toBeInstanceOf(Date);
+    expect(Number.isNaN(new Date(complaint.slaDueAt).getTime())).toBe(false);
   });
 });
 

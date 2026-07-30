@@ -17,6 +17,8 @@ import { UpdateSocietySettingsDto } from './dto/update-society-settings.dto';
 import { CreateAmenityDto } from './dto/create-amenity.dto';
 import { CreateSocietyDocumentDto } from './dto/create-society-document.dto';
 import { FlatSummaryDto } from './dto/flat-summary.dto';
+import { SocietyResponseDto } from './dto/society-response.dto';
+import { SocietySettingsResponseDto } from './dto/society-settings-response.dto';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenantScope } from '../../common/decorators/tenant-scope.decorator';
@@ -35,18 +37,30 @@ export class SocietyController {
 
   @Get(':id')
   @RequirePermission('society:read')
-  findById(@Param('id') id: string, @CurrentTenantScope() scope: TenantScope) {
+  @ApiOkResponse({ type: SocietyResponseDto })
+  findById(@Param('id') id: string, @CurrentTenantScope() scope: TenantScope): Promise<SocietyResponseDto> {
     return this.societyService.findById(id, scope);
+  }
+
+  @Get(':id/settings')
+  @RequirePermission('society:read')
+  @ApiOkResponse({ type: SocietySettingsResponseDto })
+  getSettings(
+    @Param('id') id: string,
+    @CurrentTenantScope() scope: TenantScope,
+  ): Promise<SocietySettingsResponseDto> {
+    return this.societyService.getSettings(id, scope);
   }
 
   @Patch(':id/settings')
   @RequirePermission('society:manage')
+  @ApiOkResponse({ type: SocietySettingsResponseDto })
   updateSettings(
     @Param('id') id: string,
     @Body() dto: UpdateSocietySettingsDto,
     @CurrentTenantScope() scope: TenantScope,
     @CurrentUser() user: AuthenticatedUser,
-  ) {
+  ): Promise<SocietySettingsResponseDto> {
     return this.societyService.updateSettings(id, dto, scope, user.userId);
   }
 

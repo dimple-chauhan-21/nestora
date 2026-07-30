@@ -178,7 +178,7 @@ describe('Complaint (e2e)', () => {
       .expect(200)
       .then((res) => {
         expect(res.body.status).toBe('assigned');
-        expect(res.body.assignedTo).toBe(adminUserId);
+        expect(res.body.assignedTo?.id).toBe(adminUserId);
       });
 
     await request(app.getHttpServer())
@@ -232,6 +232,22 @@ describe('Complaint (e2e)', () => {
       .get(`/api/v1/complaints/${complaintId}/comments`)
       .set('Authorization', `Bearer ${ownerBToken}`)
       .expect(403);
+
+    // Same boundary on the single-complaint GET added for the admin
+    // console's detail view — Owner A can read it, Owner B cannot, Admin
+    // (society-wide) can.
+    await request(app.getHttpServer())
+      .get(`/api/v1/complaints/${complaintId}`)
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`/api/v1/complaints/${complaintId}`)
+      .set('Authorization', `Bearer ${ownerBToken}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get(`/api/v1/complaints/${complaintId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
   });
 
   it('SLA-breach escalation actually fires via the registered cron job, not a direct service call', async () => {
@@ -270,5 +286,31 @@ describe('Complaint (e2e)', () => {
     await new Promise((r) => setTimeout(r, 300));
     const stillOne = await escalations.find({ where: { complaintId } });
     expect(stillOne).toHaveLength(1);
+  });
+
+  it('an Accountant can read the complaint queue (permission-seed fix: accountant now has complaint:read)', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/complaints')
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .send({ flatId: flatAId, categoryId, priority: 'low', description: 'Accountant-visible complaint' })
+      .expect(201);
+
+    const accountantRole = await roles.findOneOrFail({ where: { code: 'accountant' } });
+    const accountantPhone = randomPhone();
+    const accountantToken0 = await loginViaOtp(accountantPhone, 'accountant-device');
+    const accountantUserId = decodeUserId(accountantToken0);
+    await userRoles.save(
+      userRoles.create({ userId: accountantUserId, roleId: accountantRole.id, societyId, flatId: null }),
+    );
+    // Re-login so the JWT carries the newly-granted role's resolved scope.
+    const accountantToken = await loginViaOtp(accountantPhone, 'accountant-device-2');
+
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/complaints')
+      .set('Authorization', `Bearer ${accountantToken}`)
+      .expect(200);
+
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThan(0);
   });
 });

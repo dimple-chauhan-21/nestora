@@ -148,8 +148,8 @@ describe('ABAC boundary (e2e)', () => {
       .set('Authorization', `Bearer ${tokenB}`)
       .expect(200);
 
-    const idsSeenByA: string[] = resA.body.map((r: { id: string }) => r.id);
-    const idsSeenByB: string[] = resB.body.map((r: { id: string }) => r.id);
+    const idsSeenByA: string[] = resA.body.data.map((r: { id: string }) => r.id);
+    const idsSeenByB: string[] = resB.body.data.map((r: { id: string }) => r.id);
 
     expect(idsSeenByA).toContain(residentAId);
     expect(idsSeenByA).not.toContain(residentBId);

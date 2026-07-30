@@ -306,7 +306,11 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'delivery:manage',
     'society:read', // flat lookup for manual visitor entry (walk-in) when there's no QR
   ],
-  accountant: ['billing:manage', 'inventory:manage'],
+  // §5.3's permission matrix marks Accountant "View" on complaints — the
+  // admin console's complaint queue is reachable by Accountant too (billing
+  // context often needs to cross-reference a maintenance complaint), so
+  // this was a real gap, not an intentional omission.
+  accountant: ['billing:manage', 'inventory:manage', 'complaint:read'],
   flat_owner: [
     'resident:manage',
     'visitor:manage',

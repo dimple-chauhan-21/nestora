@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { ApiCreatedResponse } from '@nestjs/swagger';
 import { NoticeBoardService } from './notice-board.service';
 import { CreateNoticeDto } from './dto/create-notice.dto';
+import { NoticeResponseDto } from './dto/notice-response.dto';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenantScope } from '../../common/decorators/tenant-scope.decorator';
@@ -13,11 +15,12 @@ export class NoticeBoardController {
 
   @Post('notices')
   @RequirePermission('notice-board:manage')
+  @ApiCreatedResponse({ type: NoticeResponseDto })
   create(
     @Body() dto: CreateNoticeDto,
     @CurrentTenantScope() scope: TenantScope,
     @CurrentUser() user: AuthenticatedUser,
-  ) {
+  ): Promise<NoticeResponseDto> {
     return this.noticeBoardService.create(dto, scope, user.userId);
   }
 

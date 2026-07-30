@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { In, LessThan, Repository } from 'typeorm';
 import { Resident } from '../../database/entities/resident.entity';
 import { LeaseDetail } from '../../database/entities/lease-detail.entity';
 import { Vehicle } from '../../database/entities/vehicle.entity';
@@ -14,12 +14,34 @@ import { CreateVehicleDto } from './dto/create-vehicle.dto';
 import { CreatePetDto } from './dto/create-pet.dto';
 import { CreateResidentDocumentDto } from './dto/create-resident-document.dto';
 import { MoveOutDto } from './dto/move-out.dto';
+import { ResidentListQueryDto } from './dto/resident-list-query.dto';
+import { ResidentResponseDto } from './dto/resident-response.dto';
+import { PaginatedResidentResponseDto } from './dto/paginated-resident-response.dto';
+import { FlatDetailResponseDto } from './dto/flat-detail-response.dto';
+import { encodeCursor, decodeCursor } from '../../common/pagination/cursor.util';
 import {
   applyResidentScope,
   assertFlatMatch,
   assertSocietyMatch,
 } from '../../common/tenant-scope/tenant-scope.util';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
+
+const DEFAULT_LIST_PAGE_SIZE = 20;
+
+function toResidentResponseDto(resident: Resident, flat: Flat, user: User | null): ResidentResponseDto {
+  return {
+    id: resident.id,
+    flat: { id: flat.id, flatNumber: flat.flatNumber },
+    user: user ? { id: user.id, phone: user.phone, email: user.email } : null,
+    relationType: resident.relationType,
+    isSeniorCitizen: resident.isSeniorCitizen,
+    isChild: resident.isChild,
+    moveInDate: resident.moveInDate,
+    moveOutDate: resident.moveOutDate,
+    status: resident.status,
+    createdAt: resident.createdAt.toISOString(),
+  };
+}
 
 @Injectable()
 export class ResidentService {
@@ -238,22 +260,83 @@ export class ResidentService {
     return { blocked, moveEvent };
   }
 
+  /**
+   * Cursor-paginated, same `created_at DESC, id DESC` keyset convention as
+   * the visit-history endpoint (reuses the same encode/decodeCursor
+   * utility) — the highest-row-count table in the admin console needs the
+   * same real pagination as everywhere else, not a client-side-only list
+   * that silently breaks past one page. `flatNumber` is an ILIKE search
+   * (admin's "search by flat" box); `flatId` is an exact match (the
+   * flat-detail view's "residents of this flat" case) — both narrow via a
+   * join on `flats`, never a second unscoped query.
+   */
   async listResidents(
     societyId: string,
     scope: TenantScope,
-    filter?: string,
-  ): Promise<Resident[]> {
+    query: ResidentListQueryDto,
+  ): Promise<PaginatedResidentResponseDto> {
     assertSocietyMatch(societyId, scope);
+    const limit = Math.min(query.limit ?? DEFAULT_LIST_PAGE_SIZE, 100);
+
+    // .limit(), not .take() — TypeORM's take/skip pagination breaks once a
+    // join is present (it tries to paginate the joined result set rather
+    // than the root entity), which is exactly the flat_number search join
+    // below. .limit()/.offset() map straight to SQL LIMIT and don't have
+    // that problem.
     let qb = this.residents
       .createQueryBuilder('resident')
-      .where('resident.society_id = :societyId', { societyId });
+      .innerJoin('flats', 'flat', 'flat.id = resident.flat_id')
+      .where('resident.society_id = :societyId', { societyId })
+      .orderBy('resident.created_at', 'DESC')
+      .addOrderBy('resident.id', 'DESC')
+      .limit(limit + 1);
     qb = applyResidentScope(qb, 'resident', scope);
 
-    if (filter === 'senior_citizen') {
+    if (query.filter === 'senior_citizen') {
       qb = qb.andWhere('resident.is_senior_citizen = true');
     }
+    if (query.flatId) {
+      qb = qb.andWhere('resident.flat_id = :flatId', { flatId: query.flatId });
+    }
+    if (query.flatNumber) {
+      qb = qb.andWhere('flat.flat_number ILIKE :flatNumber', { flatNumber: `%${query.flatNumber}%` });
+    }
+    if (query.cursor) {
+      const decoded = decodeCursor(query.cursor);
+      qb = qb.andWhere(
+        '(resident.created_at < :cursorCreatedAt OR (resident.created_at = :cursorCreatedAt AND resident.id < :cursorId))',
+        { cursorCreatedAt: decoded.createdAt, cursorId: decoded.id },
+      );
+    }
 
-    return qb.orderBy('resident.created_at', 'DESC').getMany();
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+
+    const flatIds = [...new Set(page.map((r) => r.flatId))];
+    const userIds = [...new Set(page.map((r) => r.userId).filter((id): id is string => id !== null))];
+    const [flatRows, userRows] = await Promise.all([
+      flatIds.length ? this.flats.find({ where: { id: In(flatIds) } }) : Promise.resolve([]),
+      userIds.length ? this.users.find({ where: { id: In(userIds) } }) : Promise.resolve([]),
+    ]);
+    const flatsById = new Map(flatRows.map((f) => [f.id, f]));
+    const usersById = new Map(userRows.map((u) => [u.id, u]));
+
+    const data = page
+      .filter((resident) => flatsById.has(resident.flatId))
+      .map((resident) =>
+        toResidentResponseDto(
+          resident,
+          flatsById.get(resident.flatId)!,
+          resident.userId ? (usersById.get(resident.userId) ?? null) : null,
+        ),
+      );
+
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id }) : null;
+
+    return { data, pagination: { nextCursor, hasMore } };
   }
 
   /**
@@ -278,5 +361,64 @@ export class ResidentService {
       }
     }
     return suspended;
+  }
+
+  /**
+   * Deliverable #3's "one place" flat view: residents (each with their own
+   * vehicles) plus the flat's pets. `assertFlatMatch` gates a flat-pinned
+   * caller to their own flat, same as every other flat-scoped read in this
+   * module — a new join is exactly the kind of change that can widen a
+   * query across tenants if the scope check isn't carried through, so this
+   * gets the same ABAC boundary treatment as everything else.
+   */
+  async getFlatDetail(flatId: string, scope: TenantScope): Promise<FlatDetailResponseDto> {
+    const flat = await this.loadFlatOrThrow(flatId);
+    assertSocietyMatch(flat.societyId, scope);
+    assertFlatMatch(flat.id, scope);
+
+    const [residents, pets] = await Promise.all([
+      this.residents.find({ where: { flatId: flat.id }, order: { createdAt: 'ASC' } }),
+      this.pets.find({ where: { flatId: flat.id }, order: { createdAt: 'ASC' } }),
+    ]);
+
+    const residentIds = residents.map((r) => r.id);
+    const userIds = [...new Set(residents.map((r) => r.userId).filter((id): id is string => id !== null))];
+    const [vehicleRows, userRows] = await Promise.all([
+      residentIds.length ? this.vehicles.find({ where: { ownerResidentId: In(residentIds) } }) : Promise.resolve([]),
+      userIds.length ? this.users.find({ where: { id: In(userIds) } }) : Promise.resolve([]),
+    ]);
+    const vehiclesByResident = new Map<string, Vehicle[]>();
+    for (const vehicle of vehicleRows) {
+      const list = vehiclesByResident.get(vehicle.ownerResidentId) ?? [];
+      list.push(vehicle);
+      vehiclesByResident.set(vehicle.ownerResidentId, list);
+    }
+    const usersById = new Map(userRows.map((u) => [u.id, u]));
+
+    return {
+      id: flat.id,
+      flatNumber: flat.flatNumber,
+      floorNumber: flat.floorNumber,
+      status: flat.status,
+      residents: residents.map((resident) => ({
+        id: resident.id,
+        user: resident.userId
+          ? (() => {
+              const user = usersById.get(resident.userId!);
+              return user ? { id: user.id, phone: user.phone, email: user.email } : null;
+            })()
+          : null,
+        relationType: resident.relationType,
+        isSeniorCitizen: resident.isSeniorCitizen,
+        isChild: resident.isChild,
+        status: resident.status,
+        vehicles: (vehiclesByResident.get(resident.id) ?? []).map((v) => ({
+          id: v.id,
+          type: v.type,
+          registrationNumber: v.registrationNumber,
+        })),
+      })),
+      pets: pets.map((pet) => ({ id: pet.id, name: pet.name, species: pet.species })),
+    };
   }
 }

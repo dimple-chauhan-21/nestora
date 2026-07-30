@@ -9,8 +9,8 @@ import type { TenantScope } from '../../common/interceptors/tenant-scope.interce
 
 class FakeRepo<T extends { id: string }> {
   rows: T[] = [];
-  create(partial: Partial<T>): T {
-    return { id: randomUUID(), ...partial } as unknown as T;
+  create(partial?: Partial<T>): T {
+    return { id: randomUUID(), createdAt: new Date(), ...partial } as unknown as T;
   }
   async save(row: T): Promise<T> {
     const i = this.rows.findIndex((r) => r.id === row.id);
@@ -96,7 +96,13 @@ describe('NoticeBoardService.create — audience resolved once, at publish time 
       actorId,
     );
 
-    expect(notice.resolvedRecipientUserIds.sort()).toEqual([userA, userB].sort());
+    // The response DTO deliberately never exposes raw recipient user IDs
+    // (same "no raw UUIDs to the client" posture as raisedByMe elsewhere) —
+    // recipientCount is the client-visible signal; the snapshot itself is
+    // verified against the persisted row below.
+    expect(notice.recipientCount).toBe(2);
+    const persisted = await notices.findOne({ where: { id: notice.id } });
+    expect(persisted?.resolvedRecipientUserIds.sort()).toEqual([userA, userB].sort());
 
     // Simulate userB moving out / their user_roles row being deleted — a
     // live re-resolution would now exclude them.

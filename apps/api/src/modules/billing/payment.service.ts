@@ -16,6 +16,20 @@ import {
 import { assertSocietyMatch } from '../../common/tenant-scope/tenant-scope.util';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
 import { RecordOfflinePaymentDto } from './dto/record-offline-payment.dto';
+import { PaymentResponseDto } from './dto/payment-response.dto';
+
+function toPaymentResponseDto(payment: Payment): PaymentResponseDto {
+  return {
+    id: payment.id,
+    billId: payment.billId,
+    amount: payment.amount,
+    currency: payment.currency,
+    method: payment.method,
+    status: payment.status,
+    reconciled: payment.reconciled,
+    paidAt: payment.paidAt ? payment.paidAt.toISOString() : null,
+  };
+}
 
 @Injectable()
 export class PaymentService {
@@ -67,7 +81,7 @@ export class PaymentService {
     dto: RecordOfflinePaymentDto,
     scope: TenantScope,
     actorId: string,
-  ): Promise<Payment> {
+  ): Promise<PaymentResponseDto> {
     const bill = await this.billService.findByIdScoped(billId, scope);
 
     const amountRemaining = Number(bill.amountDue) - Number(bill.amountPaid);
@@ -123,7 +137,7 @@ export class PaymentService {
       afterState: { billId: bill.id, amount: payment.amount, method: dto.method, reconciled: false },
     });
 
-    return payment;
+    return toPaymentResponseDto(payment);
   }
 
   async findReceiptForPayment(paymentId: string, scope: TenantScope): Promise<Receipt> {

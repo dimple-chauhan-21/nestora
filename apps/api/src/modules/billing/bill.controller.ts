@@ -1,8 +1,11 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
 import { BillService } from './bill.service';
 import { PaymentService } from './payment.service';
 import { GenerateBillsDto } from './dto/generate-bills.dto';
 import { RecordOfflinePaymentDto } from './dto/record-offline-payment.dto';
+import { BillResponseDto } from './dto/bill-response.dto';
+import { PaymentResponseDto } from './dto/payment-response.dto';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenantScope } from '../../common/decorators/tenant-scope.decorator';
@@ -28,7 +31,8 @@ export class BillController {
 
   @Get('flats/:id/bills')
   @RequirePermission('billing:read')
-  listForFlat(@Param('id') id: string, @CurrentTenantScope() scope: TenantScope) {
+  @ApiOkResponse({ type: [BillResponseDto] })
+  listForFlat(@Param('id') id: string, @CurrentTenantScope() scope: TenantScope): Promise<BillResponseDto[]> {
     return this.billService.listForFlat(id, scope);
   }
 
@@ -44,12 +48,13 @@ export class BillController {
 
   @Post('bills/:id/record-offline-payment')
   @RequirePermission('billing:manage')
+  @ApiCreatedResponse({ type: PaymentResponseDto })
   recordOfflinePayment(
     @Param('id') id: string,
     @Body() dto: RecordOfflinePaymentDto,
     @CurrentTenantScope() scope: TenantScope,
     @CurrentUser() user: AuthenticatedUser,
-  ) {
+  ): Promise<PaymentResponseDto> {
     return this.paymentService.recordOfflinePayment(id, dto, scope, user.userId);
   }
 }

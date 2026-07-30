@@ -1,5 +1,8 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
 import { ResidentService } from './resident.service';
+import { ResidentListQueryDto } from './dto/resident-list-query.dto';
+import { PaginatedResidentResponseDto } from './dto/paginated-resident-response.dto';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentTenantScope } from '../../common/decorators/tenant-scope.decorator';
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
@@ -10,11 +13,12 @@ export class SocietyResidentController {
 
   @Get(':id/residents')
   @RequirePermission('resident:read')
+  @ApiOkResponse({ type: PaginatedResidentResponseDto })
   listResidents(
     @Param('id') id: string,
     @CurrentTenantScope() scope: TenantScope,
-    @Query('filter') filter?: string,
-  ) {
-    return this.residentService.listResidents(id, scope, filter);
+    @Query() query: ResidentListQueryDto,
+  ): Promise<PaginatedResidentResponseDto> {
+    return this.residentService.listResidents(id, scope, query);
   }
 }

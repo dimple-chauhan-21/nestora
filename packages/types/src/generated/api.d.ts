@@ -195,7 +195,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["SocietyController_getSettings"];
         put?: never;
         post?: never;
         delete?: never;
@@ -310,6 +310,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["ResidentController_createDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flats/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["FlatResidentController_getFlatDetail"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1004,6 +1020,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/complaints/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ComplaintController_findById"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/complaints/{id}/assign": {
         parameters: {
             query?: never;
@@ -1062,6 +1094,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["ComplaintController_submitFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/societies/{id}/assignable-staff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ComplaintController_listAssignableStaff"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1451,7 +1499,35 @@ export interface components {
             societyId: string | null;
         };
         CreateSocietyDto: Record<string, never>;
-        UpdateSocietySettingsDto: Record<string, never>;
+        SocietyResponseDto: {
+            id: string;
+            name: string;
+            address: string | null;
+            city: string | null;
+            state: string | null;
+            pincode: string | null;
+            timezone: string;
+            currency: string;
+            registrationNumber: string | null;
+        };
+        SocietySettingsResponseDto: {
+            societyId: string;
+            billingCycleDay: number;
+            lateFeePct: number;
+            fiscalYearStartMonth: number;
+            featureFlags: Record<string, never>;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        UpdateSocietySettingsDto: {
+            /** @description Day of month bills are generated on */
+            billingCycleDay?: number;
+            /** @description Late fee percentage applied to overdue bills */
+            lateFeePct?: number;
+            /** @description 1 = January */
+            fiscalYearStartMonth?: number;
+            featureFlags?: Record<string, never>;
+        };
         FlatSummaryDto: {
             id: string;
             flatNumber: string;
@@ -1463,8 +1539,75 @@ export interface components {
         CreateVehicleDto: Record<string, never>;
         CreatePetDto: Record<string, never>;
         CreateResidentDocumentDto: Record<string, never>;
+        FlatDetailUserDto: {
+            id: string;
+            phone: string | null;
+            email: string | null;
+        };
+        FlatDetailVehicleDto: {
+            id: string;
+            /** @enum {string} */
+            type: "car" | "bike";
+            registrationNumber: string;
+        };
+        FlatDetailResidentDto: {
+            id: string;
+            user: components["schemas"]["FlatDetailUserDto"] | null;
+            /** @enum {string} */
+            relationType: "owner" | "tenant" | "family";
+            isSeniorCitizen: boolean;
+            isChild: boolean;
+            /** @enum {string} */
+            status: "active" | "suspended" | "moved_out";
+            vehicles: components["schemas"]["FlatDetailVehicleDto"][];
+        };
+        FlatDetailPetDto: {
+            id: string;
+            name: string;
+            species: string;
+        };
+        FlatDetailResponseDto: {
+            id: string;
+            flatNumber: string;
+            floorNumber: number | null;
+            status: string;
+            residents: components["schemas"]["FlatDetailResidentDto"][];
+            pets: components["schemas"]["FlatDetailPetDto"][];
+        };
         CreateResidentDto: Record<string, never>;
         MoveOutDto: Record<string, never>;
+        ResidentFlatDto: {
+            id: string;
+            flatNumber: string;
+        };
+        ResidentUserDto: {
+            id: string;
+            phone: string | null;
+            email: string | null;
+        };
+        ResidentResponseDto: {
+            id: string;
+            flat: components["schemas"]["ResidentFlatDto"];
+            user: components["schemas"]["ResidentUserDto"] | null;
+            /** @enum {string} */
+            relationType: "owner" | "tenant" | "family";
+            isSeniorCitizen: boolean;
+            isChild: boolean;
+            moveInDate: string | null;
+            moveOutDate: string | null;
+            /** @enum {string} */
+            status: "active" | "suspended" | "moved_out";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ResidentPaginationMetaDto: {
+            nextCursor: string | null;
+            hasMore: boolean;
+        };
+        PaginatedResidentResponseDto: {
+            data: components["schemas"]["ResidentResponseDto"][];
+            pagination: components["schemas"]["ResidentPaginationMetaDto"];
+        };
         CreateWalkInDto: Record<string, never>;
         VisitFlatDto: {
             id: string;
@@ -1614,14 +1757,145 @@ export interface components {
         SetPoliceVerificationStatusDto: Record<string, never>;
         CreateComplaintCategoryDto: Record<string, never>;
         CreateComplaintDto: Record<string, never>;
-        AssignComplaintDto: Record<string, never>;
-        UpdateComplaintStatusDto: Record<string, never>;
-        CreateCommentDto: Record<string, never>;
+        ComplaintFlatDto: {
+            id: string;
+            flatNumber: string;
+        };
+        ComplaintCategoryDto: {
+            id: string;
+            name: string;
+        };
+        ComplaintUserDto: {
+            id: string;
+            phone: string | null;
+        };
+        ComplaintResponseDto: {
+            id: string;
+            flat: components["schemas"]["ComplaintFlatDto"];
+            category: components["schemas"]["ComplaintCategoryDto"];
+            raisedBy: components["schemas"]["ComplaintUserDto"] | null;
+            assignedTo: components["schemas"]["ComplaintUserDto"] | null;
+            /** @enum {string} */
+            priority: "low" | "medium" | "high" | "urgent";
+            description: string;
+            /** @enum {string} */
+            status: "open" | "assigned" | "in_progress" | "resolved" | "reopened" | "closed";
+            /** Format: date-time */
+            slaDueAt: string;
+            /** Format: date-time */
+            resolvedAt: string | null;
+            satisfactionRating: number | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AssignComplaintDto: {
+            /** Format: uuid */
+            assignedTo: string;
+        };
+        UpdateComplaintStatusDto: {
+            /** @enum {string} */
+            status: "open" | "assigned" | "in_progress" | "resolved" | "reopened" | "closed";
+        };
+        CreateCommentDto: {
+            body: string;
+            /** @default false */
+            isInternal: boolean;
+        };
+        CommentAuthorDto: {
+            id: string;
+            phone: string | null;
+        };
+        ComplaintCommentResponseDto: {
+            id: string;
+            author: components["schemas"]["CommentAuthorDto"] | null;
+            body: string;
+            isInternal: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
         SubmitFeedbackDto: Record<string, never>;
+        AssignableStaffDto: {
+            id: string;
+            phone: string | null;
+            roleCode: string;
+        };
         CreateBillingPlanDto: Record<string, never>;
         GenerateBillsDto: Record<string, never>;
-        RecordOfflinePaymentDto: Record<string, never>;
-        CreateNoticeDto: Record<string, never>;
+        BillResponseDto: {
+            id: string;
+            flatId: string;
+            billingPeriod: string;
+            amountDue: string;
+            amountPaid: string;
+            currency: string;
+            dueDate: string;
+            /** @enum {string} */
+            status: "unpaid" | "partial" | "paid" | "overdue";
+            lateFeeApplied: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        RecordOfflinePaymentDto: {
+            /** @enum {string} */
+            method: "cash" | "cheque" | "bank_transfer";
+            amount: number;
+        };
+        PaymentResponseDto: {
+            id: string;
+            billId: string;
+            amount: string;
+            currency: string;
+            /** @enum {string} */
+            method: "online" | "cash" | "cheque" | "bank_transfer";
+            /** @enum {string} */
+            status: "pending" | "success" | "failed" | "refunded";
+            reconciled: boolean;
+            /** Format: date-time */
+            paidAt: string | null;
+        };
+        OutstandingAgingDto: {
+            days0To30: string;
+            days30To60: string;
+            days60Plus: string;
+        };
+        FinancialSummaryResponseDto: {
+            societyId: string;
+            totalBilled: string;
+            totalCollected: string;
+            collectionEfficiencyPct: string;
+            outstandingAging: components["schemas"]["OutstandingAgingDto"];
+        };
+        TargetAudienceDto: {
+            /** @enum {string} */
+            type: "all" | "tower_ids" | "role";
+            /** @description Required when type is "tower_ids" */
+            towerIds?: string[];
+            /** @description Role code — required when type is "role" */
+            role?: string;
+        };
+        CreateNoticeDto: {
+            title: string;
+            body: string;
+            category?: string;
+            targetAudience: components["schemas"]["TargetAudienceDto"];
+            /** @default false */
+            isPinned: boolean;
+            /** Format: date-time */
+            expiresAt?: string;
+            attachmentUrls?: string[];
+        };
+        NoticeResponseDto: {
+            id: string;
+            title: string;
+            body: string;
+            category: string | null;
+            isPinned: boolean;
+            /** Format: date-time */
+            expiresAt: string | null;
+            recipientCount: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
         CreateAssetDto: Record<string, never>;
         CreateMaintenanceLogDto: Record<string, never>;
         CreateBookingRuleDto: Record<string, never>;
@@ -1861,7 +2135,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SocietyResponseDto"];
+                };
+            };
+        };
+    };
+    SocietyController_getSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SocietySettingsResponseDto"];
+                };
             };
         };
     };
@@ -1884,7 +2181,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SocietySettingsResponseDto"];
+                };
             };
         };
     };
@@ -2043,6 +2342,27 @@ export interface operations {
             };
         };
     };
+    FlatResidentController_getFlatDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlatDetailResponseDto"];
+                };
+            };
+        };
+    };
     FlatResidentController_createResident: {
         parameters: {
             query?: never;
@@ -2091,8 +2411,13 @@ export interface operations {
     };
     SocietyResidentController_listResidents: {
         parameters: {
-            query: {
-                filter: string;
+            query?: {
+                /** @description Opaque keyset cursor from a previous page's pagination.nextCursor */
+                cursor?: string;
+                limit?: number;
+                filter?: "senior_citizen";
+                flatId?: string;
+                flatNumber?: string;
             };
             header?: never;
             path: {
@@ -2106,7 +2431,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PaginatedResidentResponseDto"];
+                };
             };
         };
     };
@@ -2976,7 +3303,12 @@ export interface operations {
     };
     ComplaintController_list: {
         parameters: {
-            query?: never;
+            query?: {
+                flatId?: string;
+                categoryId?: string;
+                priority?: "low" | "medium" | "high" | "urgent";
+                status?: "open" | "assigned" | "in_progress" | "resolved" | "reopened" | "closed";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2987,7 +3319,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ComplaintResponseDto"][];
+                };
             };
         };
     };
@@ -3008,7 +3342,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ComplaintResponseDto"];
+                };
+            };
+        };
+    };
+    ComplaintController_findById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComplaintResponseDto"];
+                };
             };
         };
     };
@@ -3031,7 +3388,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ComplaintResponseDto"];
+                };
             };
         };
     };
@@ -3054,7 +3413,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ComplaintResponseDto"];
+                };
             };
         };
     };
@@ -3073,7 +3434,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ComplaintCommentResponseDto"][];
+                };
             };
         };
     };
@@ -3096,7 +3459,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ComplaintCommentResponseDto"];
+                };
             };
         };
     };
@@ -3119,7 +3484,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ComplaintResponseDto"];
+                };
+            };
+        };
+    };
+    ComplaintController_listAssignableStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignableStaffDto"][];
+                };
             };
         };
     };
@@ -3180,7 +3568,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BillResponseDto"][];
+                };
             };
         };
     };
@@ -3222,7 +3612,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PaymentResponseDto"];
+                };
             };
         };
     };
@@ -3258,7 +3650,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FinancialSummaryResponseDto"];
+                };
             };
         };
     };
@@ -3279,7 +3673,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NoticeResponseDto"];
+                };
             };
         };
     };
