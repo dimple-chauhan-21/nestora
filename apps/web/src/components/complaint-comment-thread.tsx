@@ -1,11 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { Button, Textarea, Badge, Alert, AlertDescription, Spinner, Card, CardContent } from '@nestora/ui';
 import { formatIst } from '@nestora/utils';
 import type { components } from '@nestora/types';
-import { complaintCommentsKey } from '../query-keys';
 
 type ComplaintCommentResponseDto = components['schemas']['ComplaintCommentResponseDto'];
 
@@ -35,21 +34,40 @@ async function postComment(
 }
 
 /**
- * is_internal-aware comment thread — no such component existed anywhere in
- * apps/web yet, so this is new. Staff-only ("internal note") comments get a
- * visibly distinct treatment (amber background + badge) so an admin never
- * mistakes one for something the resident who raised the complaint can see.
+ * is_internal-aware comment thread — shared between the admin console and
+ * the resident dashboard (originally admin-only; extended here rather than
+ * duplicated). Staff-only ("internal note") comments get a visibly distinct
+ * treatment (amber background + badge) so nobody mistakes one for something
+ * the resident who raised the complaint can see.
+ *
+ * `canPostInternal` hides the "Internal note" checkbox entirely for a
+ * resident caller — not just because the API already refuses to honor
+ * isInternal:true from a flat-scoped caller (it does, see
+ * ComplaintService.addComment), but because *offering* a control that's
+ * silently ignored would be misleading UI. The `comment.isInternal` render
+ * branch below is left in either way as defense-in-depth: the API also
+ * never returns is_internal comments to a resident-scoped GET in the first
+ * place (server-side filtering, not client-side), so for a resident caller
+ * this branch is simply unreachable in practice, not relied upon to hide
+ * anything.
  */
-export function ComplaintCommentThread({ complaintId }: { complaintId: string }) {
+export function ComplaintCommentThread({
+  complaintId,
+  queryKey,
+  canPostInternal = true,
+}: {
+  complaintId: string;
+  queryKey: QueryKey;
+  canPostInternal?: boolean;
+}) {
   const queryClient = useQueryClient();
-  const queryKey = complaintCommentsKey(complaintId);
   const query = useQuery({ queryKey, queryFn: () => fetchComments(complaintId) });
 
   const [body, setBody] = useState('');
   const [isInternal, setIsInternal] = useState(false);
 
   const mutation = useMutation({
-    mutationFn: () => postComment(complaintId, { body, isInternal }),
+    mutationFn: () => postComment(complaintId, { body, isInternal: canPostInternal && isInternal }),
     onSuccess: () => {
       setBody('');
       setIsInternal(false);
@@ -122,15 +140,19 @@ export function ComplaintCommentThread({ complaintId }: { complaintId: string })
           className="min-h-[70px]"
         />
         <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={isInternal}
-              onChange={(e) => setIsInternal(e.target.checked)}
-              className="h-4 w-4 rounded border-input"
-            />
-            Internal note (staff only, not visible to the resident)
-          </label>
+          {canPostInternal ? (
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={isInternal}
+                onChange={(e) => setIsInternal(e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              Internal note (staff only, not visible to the resident)
+            </label>
+          ) : (
+            <span />
+          )}
           <Button type="submit" size="sm" disabled={mutation.isPending || !body.trim()}>
             {mutation.isPending && <Spinner className="mr-1 h-3 w-3" />}
             Post

@@ -313,4 +313,30 @@ describe('Complaint (e2e)', () => {
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body.length).toBeGreaterThan(0);
   });
+
+  it('GET /complaint-categories lists this society\'s categories plus global defaults, but never another society\'s', async () => {
+    const globalCategory = await categories.save(
+      categories.create({ societyId: null, name: 'Global Default', defaultSlaHours: 72, defaultAssigneeRole: null }),
+    );
+
+    const otherSociety = await societies.save(societies.create({ name: `Other Society ${Date.now()}` }));
+    const otherOnlyCategory = await categories.save(
+      categories.create({
+        societyId: otherSociety.id,
+        name: 'Other Society Only',
+        defaultSlaHours: 24,
+        defaultAssigneeRole: null,
+      }),
+    );
+
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/complaint-categories')
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .expect(200);
+
+    const names = res.body.map((c: { name: string }) => c.name);
+    expect(names).toContain('General'); // this society's own category, seeded in beforeAll
+    expect(names).toContain(globalCategory.name); // global default (society_id IS NULL)
+    expect(names).not.toContain(otherOnlyCategory.name); // another society's own category
+  });
 });

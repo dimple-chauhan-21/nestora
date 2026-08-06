@@ -6,6 +6,7 @@ import { GenerateBillsDto } from './dto/generate-bills.dto';
 import { RecordOfflinePaymentDto } from './dto/record-offline-payment.dto';
 import { BillResponseDto } from './dto/bill-response.dto';
 import { PaymentResponseDto } from './dto/payment-response.dto';
+import { PaymentSessionResponseDto } from './dto/payment-session-response.dto';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenantScope } from '../../common/decorators/tenant-scope.decorator';
@@ -36,13 +37,24 @@ export class BillController {
     return this.billService.listForFlat(id, scope);
   }
 
+  @Get('flats/:id/payments')
+  @RequirePermission('billing:read')
+  @ApiOkResponse({ type: [PaymentResponseDto] })
+  listPaymentsForFlat(
+    @Param('id') id: string,
+    @CurrentTenantScope() scope: TenantScope,
+  ): Promise<PaymentResponseDto[]> {
+    return this.paymentService.listForFlat(id, scope);
+  }
+
   @Post('bills/:id/pay')
   @RequirePermission('billing:pay')
+  @ApiCreatedResponse({ type: PaymentSessionResponseDto })
   pay(
     @Param('id') id: string,
     @CurrentTenantScope() scope: TenantScope,
     @CurrentUser() user: AuthenticatedUser,
-  ) {
+  ): Promise<PaymentSessionResponseDto> {
     return this.paymentService.initiatePayment(id, scope, user.userId);
   }
 

@@ -45,8 +45,32 @@ const RETRYABLE_METHODS = new Set(['GET', 'PUT', 'POST', 'DELETE', 'OPTIONS', 'H
  * still-unconsumed `init` object, which openapi-fetch itself serializes
  * fresh each time.
  */
+/**
+ * openapi-fetch always calls `fetch(request)` with a real `Request` instance
+ * (never `fetch(url, init)`). Next.js's patched `fetch` in Route Handlers
+ * has a bug on Node >= 24.14 (github.com/vercel/next.js/issues/90826):
+ * passing a `Request` that has a body, where the server responds with a
+ * non-2xx status, throws `TypeError: fetch failed { cause: Error: expected
+ * non-null body source } }` instead of yielding the response — the 401/400
+ * from the backend never reaches openapi-fetch's caller (or this package's
+ * own 401-retry logic below) at all. Unwrapping the Request back into a
+ * plain (url, init) pair before the real fetch call avoids Next's
+ * Request-cloning path entirely.
+ */
+async function requestSafeFetch(request: Request, requestInitExt?: unknown): Promise<Response> {
+  const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
+  return fetch(request.url, {
+    method: request.method,
+    headers: request.headers,
+    body: hasBody ? await request.clone().arrayBuffer() : null,
+    redirect: request.redirect,
+    credentials: request.credentials,
+    ...(requestInitExt as object),
+  });
+}
+
 export function createApiClient({ baseUrl, tokenStore }: CreateApiClientOptions): Client<paths> {
-  const raw = createClient<paths>({ baseUrl });
+  const raw = createClient<paths>({ baseUrl, fetch: requestSafeFetch });
 
   const authMiddleware: Middleware = {
     async onRequest({ request }) {

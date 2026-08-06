@@ -10,6 +10,7 @@ import { SubmitFeedbackDto } from './dto/submit-feedback.dto';
 import { ComplaintResponseDto } from './dto/complaint-response.dto';
 import { ComplaintCommentResponseDto } from './dto/complaint-comment-response.dto';
 import { AssignableStaffDto } from './dto/assignable-staff.dto';
+import { ComplaintCategoryResponseDto } from './dto/complaint-category-response.dto';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenantScope } from '../../common/decorators/tenant-scope.decorator';
@@ -25,6 +26,13 @@ export class ComplaintController {
   @RequirePermission('complaint:manage')
   createCategory(@Body() dto: CreateComplaintCategoryDto) {
     return this.complaintService.createCategory(dto);
+  }
+
+  @Get('complaint-categories')
+  @RequirePermission('complaint:read')
+  @ApiOkResponse({ type: [ComplaintCategoryResponseDto] })
+  listCategories(@CurrentTenantScope() scope: TenantScope): Promise<ComplaintCategoryResponseDto[]> {
+    return this.complaintService.listCategories(scope);
   }
 
   @Post('complaints')

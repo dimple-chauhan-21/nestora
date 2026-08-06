@@ -995,7 +995,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["ComplaintController_listCategories"];
         put?: never;
         post: operations["ComplaintController_createCategory"];
         delete?: never;
@@ -1156,6 +1156,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["BillController_listForFlat"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flats/{id}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["BillController_listPaymentsForFlat"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1756,7 +1772,26 @@ export interface components {
         SetPoliceVerificationDocumentDto: Record<string, never>;
         SetPoliceVerificationStatusDto: Record<string, never>;
         CreateComplaintCategoryDto: Record<string, never>;
-        CreateComplaintDto: Record<string, never>;
+        ComplaintCategoryResponseDto: {
+            id: string;
+            name: string;
+            defaultSlaHours: number;
+        };
+        CreateComplaintAttachmentDto: {
+            fileUrl: string;
+            /** @enum {string} */
+            type: "image" | "video";
+        };
+        CreateComplaintDto: {
+            /** Format: uuid */
+            flatId: string;
+            /** Format: uuid */
+            categoryId: string;
+            /** @enum {string} */
+            priority: "low" | "medium" | "high" | "urgent";
+            description: string;
+            attachments?: components["schemas"]["CreateComplaintAttachmentDto"][];
+        };
         ComplaintFlatDto: {
             id: string;
             flatNumber: string;
@@ -1835,11 +1870,6 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
-        RecordOfflinePaymentDto: {
-            /** @enum {string} */
-            method: "cash" | "cheque" | "bank_transfer";
-            amount: number;
-        };
         PaymentResponseDto: {
             id: string;
             billId: string;
@@ -1852,6 +1882,16 @@ export interface components {
             reconciled: boolean;
             /** Format: date-time */
             paidAt: string | null;
+            receiptNumber: string | null;
+        };
+        PaymentSessionResponseDto: {
+            gatewayRef: string;
+            checkoutUrl: string;
+        };
+        RecordOfflinePaymentDto: {
+            /** @enum {string} */
+            method: "cash" | "cheque" | "bank_transfer";
+            amount: number;
         };
         OutstandingAgingDto: {
             days0To30: string;
@@ -3280,6 +3320,25 @@ export interface operations {
             };
         };
     };
+    ComplaintController_listCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComplaintCategoryResponseDto"][];
+                };
+            };
+        };
+    };
     ComplaintController_createCategory: {
         parameters: {
             query?: never;
@@ -3574,6 +3633,27 @@ export interface operations {
             };
         };
     };
+    BillController_listPaymentsForFlat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentResponseDto"][];
+                };
+            };
+        };
+    };
     BillController_pay: {
         parameters: {
             query?: never;
@@ -3589,7 +3669,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PaymentSessionResponseDto"];
+                };
             };
         };
     };

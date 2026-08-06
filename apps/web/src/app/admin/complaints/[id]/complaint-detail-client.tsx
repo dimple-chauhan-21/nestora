@@ -17,8 +17,8 @@ import {
 } from '@nestora/ui';
 import { formatIst, formatRoleName } from '@nestora/utils';
 import type { components } from '@nestora/types';
-import { assignableStaffKey } from '../../query-keys';
-import { ComplaintCommentThread } from '../complaint-comment-thread';
+import { assignableStaffKey, complaintCommentsKey } from '../../query-keys';
+import { ComplaintCommentThread } from '@/components/complaint-comment-thread';
 
 type ComplaintResponseDto = components['schemas']['ComplaintResponseDto'];
 type AssignableStaffDto = components['schemas']['AssignableStaffDto'];
@@ -159,7 +159,7 @@ export function ComplaintDetailClient({ complaintId, societyId }: { complaintId:
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-foreground">Comments</h2>
-        <ComplaintCommentThread complaintId={complaintId} />
+        <ComplaintCommentThread complaintId={complaintId} queryKey={complaintCommentsKey(complaintId)} />
       </section>
     </div>
   );

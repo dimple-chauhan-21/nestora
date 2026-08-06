@@ -28,9 +28,17 @@ export default async function DashboardPage() {
             </p>
           </div>
           {me.flatId && (
-            <Link href="/dashboard/visits" className="text-sm font-medium text-primary hover:underline">
-              Visit history
-            </Link>
+            <nav className="flex items-center gap-4">
+              <Link href="/dashboard/visits" className="text-sm font-medium text-primary hover:underline">
+                Visit history
+              </Link>
+              <Link href="/dashboard/bills" className="text-sm font-medium text-primary hover:underline">
+                Bills
+              </Link>
+              <Link href="/dashboard/complaints" className="text-sm font-medium text-primary hover:underline">
+                Complaints
+              </Link>
+            </nav>
           )}
         </header>
 

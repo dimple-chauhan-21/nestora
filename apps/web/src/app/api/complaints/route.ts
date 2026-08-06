@@ -35,3 +35,15 @@ export async function GET(req: Request) {
   }
   return NextResponse.json(result.data);
 }
+
+export async function POST(req: Request) {
+  const body = await req.json();
+  const result = await api.POST('/api/v1/complaints', { body });
+
+  if (!result.data) {
+    return NextResponse.json(result.error ?? { message: 'Failed to raise complaint' }, {
+      status: result.response.status,
+    });
+  }
+  return NextResponse.json(result.data);
+}

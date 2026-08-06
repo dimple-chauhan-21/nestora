@@ -330,7 +330,7 @@ describe('Billing (e2e)', () => {
     expect(stillPending.status).toBe('pending');
   });
 
-  it("a Tenant/Owner cannot read another flat's bills (ABAC boundary)", async () => {
+  it("a Tenant/Owner cannot read another flat's bills or payments (ABAC boundary)", async () => {
     await generateBillForFlatA(); // ensure flat A has at least one bill
 
     // Owner A tries to read Owner B's flat's bills.
@@ -344,5 +344,59 @@ describe('Billing (e2e)', () => {
       .get(`/api/v1/flats/${flatBId}/bills`)
       .set('Authorization', `Bearer ${ownerBToken}`)
       .expect(200);
+
+    // Same boundary on the new payment-history endpoint.
+    await request(app.getHttpServer())
+      .get(`/api/v1/flats/${flatBId}/payments`)
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get(`/api/v1/flats/${flatBId}/payments`)
+      .set('Authorization', `Bearer ${ownerBToken}`)
+      .expect(200);
+  });
+
+  it('GET /flats/{id}/payments lists payment history with a real receipt number once confirmed', async () => {
+    const bill = await generateBillForFlatA();
+
+    const payRes = await request(app.getHttpServer())
+      .post(`/api/v1/bills/${bill.id}/pay`)
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .expect(201);
+    const gatewayRef = payRes.body.gatewayRef;
+    const { bodyString, signature } = signedWebhookRequest(gatewayRef);
+    await request(app.getHttpServer())
+      .post('/api/v1/webhooks/payment-gateway')
+      .set('Content-Type', 'application/json')
+      .set('X-Gateway-Signature', signature)
+      .send(bodyString)
+      .expect(201);
+
+    const paymentsRes = await request(app.getHttpServer())
+      .get(`/api/v1/flats/${flatAId}/payments`)
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .expect(200);
+    const confirmed = paymentsRes.body.find((p: { billId: string }) => p.billId === bill.id);
+    expect(confirmed).toBeDefined();
+    expect(confirmed.status).toBe('success');
+    expect(confirmed.receiptNumber).toMatch(/^RCPT-/);
+  });
+
+  it('GET /flats/{id}/payments shows a pending online payment with receiptNumber null (stub gateway never confirms it automatically)', async () => {
+    const bill = await generateBillForFlatA();
+
+    const payRes = await request(app.getHttpServer())
+      .post(`/api/v1/bills/${bill.id}/pay`)
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .expect(201);
+    expect(payRes.body.checkoutUrl).toMatch(/^https:\/\/stub-gateway\.invalid\//);
+
+    const paymentsRes = await request(app.getHttpServer())
+      .get(`/api/v1/flats/${flatAId}/payments`)
+      .set('Authorization', `Bearer ${ownerAToken}`)
+      .expect(200);
+    const pending = paymentsRes.body.find((p: { billId: string }) => p.billId === bill.id);
+    expect(pending.status).toBe('pending');
+    expect(pending.receiptNumber).toBeNull();
   });
 });

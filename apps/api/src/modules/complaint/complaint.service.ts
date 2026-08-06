@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Complaint, ComplaintPriority, ComplaintStatus } from '../../database/entities/complaint.entity';
@@ -15,6 +15,7 @@ import { applyResidentScope, assertFlatMatch, assertSocietyMatch } from '../../c
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
 import { CreateComplaintDto } from './dto/create-complaint.dto';
 import { CreateComplaintCategoryDto } from './dto/create-complaint-category.dto';
+import { ComplaintCategoryResponseDto } from './dto/complaint-category-response.dto';
 import { AssignComplaintDto } from './dto/assign-complaint.dto';
 import { UpdateComplaintStatusDto } from './dto/update-complaint-status.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -127,6 +128,27 @@ export class ComplaintService {
       defaultAssigneeRole: dto.defaultAssigneeRole ?? null,
     });
     return this.categories.save(category);
+  }
+
+  /**
+   * No list endpoint existed before this session — only POST (admin-only).
+   * The raise-complaint form needs a real picklist. `society_id IS NULL`
+   * rows are global defaults (per the entity's own doc comment), visible
+   * alongside this society's own categories to every caller regardless of
+   * role — this is a read-only reference list, not tenant-sensitive data.
+   */
+  async listCategories(scope: TenantScope): Promise<ComplaintCategoryResponseDto[]> {
+    if (!scope.societyId) {
+      throw new ForbiddenException('A society-scoped caller is required to list complaint categories');
+    }
+
+    const rows = await this.categories
+      .createQueryBuilder('category')
+      .where('category.society_id = :societyId OR category.society_id IS NULL', { societyId: scope.societyId })
+      .orderBy('category.name', 'ASC')
+      .getMany();
+
+    return rows.map((c) => ({ id: c.id, name: c.name, defaultSlaHours: c.defaultSlaHours }));
   }
 
   private async loadFlatOrThrow(flatId: string): Promise<Flat> {
