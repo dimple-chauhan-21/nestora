@@ -5,3 +5,4 @@ export const flatPaymentsKey = (flatId: string) => ['billing', flatId, 'payments
 export const myComplaintsKey = (flatId: string) => ['complaints', flatId, 'mine'] as const;
 export const complaintCategoriesKey = () => ['complaints', 'categories'] as const;
 export const complaintCommentsKey = (complaintId: string) => ['complaints', complaintId, 'comments'] as const;
+export const societyNoticesKey = (societyId: string) => ['notices', societyId] as const;

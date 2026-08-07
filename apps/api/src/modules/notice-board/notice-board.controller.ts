@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { ApiCreatedResponse } from '@nestjs/swagger';
+import { ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
 import { NoticeBoardService } from './notice-board.service';
 import { CreateNoticeDto } from './dto/create-notice.dto';
 import { NoticeResponseDto } from './dto/notice-response.dto';
+import { NoticeReadResponseDto } from './dto/notice-read-response.dto';
+import { NoticeReadReportResponseDto } from './dto/notice-read-report-response.dto';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenantScope } from '../../common/decorators/tenant-scope.decorator';
@@ -26,27 +28,30 @@ export class NoticeBoardController {
 
   @Get('societies/:id/notices')
   @RequirePermission('notice-board:read')
+  @ApiOkResponse({ type: [NoticeResponseDto] })
   listForSociety(
     @Param('id') id: string,
     @CurrentTenantScope() scope: TenantScope,
     @CurrentUser() user: AuthenticatedUser,
-  ) {
+  ): Promise<NoticeResponseDto[]> {
     return this.noticeBoardService.listForSociety(id, scope, user.userId);
   }
 
   @Post('notices/:id/read')
   @RequirePermission('notice-board:read')
+  @ApiCreatedResponse({ type: NoticeReadResponseDto })
   markRead(
     @Param('id') id: string,
     @CurrentTenantScope() scope: TenantScope,
     @CurrentUser() user: AuthenticatedUser,
-  ) {
+  ): Promise<NoticeReadResponseDto> {
     return this.noticeBoardService.markRead(id, scope, user.userId);
   }
 
   @Get('notices/:id/read-report')
   @RequirePermission('notice-board:manage')
-  readReport(@Param('id') id: string, @CurrentTenantScope() scope: TenantScope) {
+  @ApiOkResponse({ type: NoticeReadReportResponseDto })
+  readReport(@Param('id') id: string, @CurrentTenantScope() scope: TenantScope): Promise<NoticeReadReportResponseDto> {
     return this.noticeBoardService.readReport(id, scope);
   }
 }

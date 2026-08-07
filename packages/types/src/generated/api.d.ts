@@ -1935,6 +1935,17 @@ export interface components {
             recipientCount: number;
             /** Format: date-time */
             createdAt: string;
+            isRead: boolean;
+        };
+        NoticeReadResponseDto: {
+            noticeId: string;
+            /** Format: date-time */
+            readAt: string;
+        };
+        NoticeReadReportResponseDto: {
+            totalRecipients: number;
+            readCount: number;
+            readUserIds: string[];
         };
         CreateAssetDto: Record<string, never>;
         CreateMaintenanceLogDto: Record<string, never>;
@@ -3776,7 +3787,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NoticeResponseDto"][];
+                };
             };
         };
     };
@@ -3795,7 +3808,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NoticeReadResponseDto"];
+                };
             };
         };
     };
@@ -3814,7 +3829,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NoticeReadReportResponseDto"];
+                };
             };
         };
     };

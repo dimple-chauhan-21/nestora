@@ -5,6 +5,7 @@ import { getMe } from '@/lib/me';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@nestora/ui';
 import { formatRoleName } from '@nestora/utils';
 import { PendingVisitsSection } from './pending-visits-section';
+import { NoticesNavLink } from './notices/notices-nav-link';
 
 export default async function DashboardPage() {
   const accessToken = await getAccessToken();
@@ -38,6 +39,7 @@ export default async function DashboardPage() {
               <Link href="/dashboard/complaints" className="text-sm font-medium text-primary hover:underline">
                 Complaints
               </Link>
+              {me.societyId && <NoticesNavLink societyId={me.societyId} />}
             </nav>
           )}
         </header>

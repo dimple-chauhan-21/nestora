@@ -25,4 +25,8 @@ export class NoticeResponseDto {
 
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt!: string;
+
+  /** Whether the *calling* user has read this notice — never another user's read status. */
+  @ApiProperty({ type: Boolean })
+  isRead!: boolean;
 }

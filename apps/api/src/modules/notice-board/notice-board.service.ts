@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
 import { Notice, type NoticeTargetAudience } from '../../database/entities/notice.entity';
 import { NoticeAttachment } from '../../database/entities/notice-attachment.entity';
 import { NoticeRead } from '../../database/entities/notice-read.entity';
@@ -9,6 +9,8 @@ import { assertSocietyMatch } from '../../common/tenant-scope/tenant-scope.util'
 import type { TenantScope } from '../../common/interceptors/tenant-scope.interceptor';
 import { CreateNoticeDto } from './dto/create-notice.dto';
 import { NoticeResponseDto } from './dto/notice-response.dto';
+import { NoticeReadResponseDto } from './dto/notice-read-response.dto';
+import { NoticeReadReportResponseDto } from './dto/notice-read-report-response.dto';
 
 @Injectable()
 export class NoticeBoardService {
@@ -85,15 +87,21 @@ export class NoticeBoardService {
       await this.attachments.save(this.attachments.create({ societyId, noticeId: saved.id, fileUrl }));
     }
 
+    // isRead: false — no notice_reads row can exist yet for a notice that was just created.
+    return this.toResponseDto(saved, false);
+  }
+
+  private toResponseDto(notice: Notice, isRead: boolean): NoticeResponseDto {
     return {
-      id: saved.id,
-      title: saved.title,
-      body: saved.body,
-      category: saved.category,
-      isPinned: saved.isPinned,
-      expiresAt: saved.expiresAt ? saved.expiresAt.toISOString() : null,
-      recipientCount: recipients.length,
-      createdAt: saved.createdAt.toISOString(),
+      id: notice.id,
+      title: notice.title,
+      body: notice.body,
+      category: notice.category,
+      isPinned: notice.isPinned,
+      expiresAt: notice.expiresAt ? notice.expiresAt.toISOString() : null,
+      recipientCount: notice.resolvedRecipientUserIds.length,
+      createdAt: notice.createdAt.toISOString(),
+      isRead,
     };
   }
 
@@ -102,16 +110,33 @@ export class NoticeBoardService {
    * society; a flat-pinned caller (Owner/Tenant/family) sees only notices
    * whose resolved snapshot actually includes them — makes the audience
    * mechanism functionally meaningful, not just an administrative record.
+   *
+   * Returns `NoticeResponseDto[]`, never the raw `Notice` entity — the
+   * entity carries `resolvedRecipientUserIds` (every recipient's raw user
+   * UUID) and admin-only metadata (`publishedBy`, `targetAudience`, etc.)
+   * that has no business reaching a resident's browser just because they're
+   * one of the people a notice was sent to.
    */
-  async listForSociety(societyId: string, scope: TenantScope, callerUserId: string): Promise<Notice[]> {
+  async listForSociety(societyId: string, scope: TenantScope, callerUserId: string): Promise<NoticeResponseDto[]> {
     assertSocietyMatch(societyId, scope);
 
     const all = await this.notices.find({
       where: { societyId },
       order: { isPinned: 'DESC', createdAt: 'DESC' },
     });
-    if (scope.isPlatformScope || scope.flatId === null) return all;
-    return all.filter((n) => n.resolvedRecipientUserIds.includes(callerUserId));
+    const visible =
+      scope.isPlatformScope || scope.flatId === null
+        ? all
+        : all.filter((n) => n.resolvedRecipientUserIds.includes(callerUserId));
+
+    if (visible.length === 0) return [];
+
+    const readRows = await this.reads.find({
+      where: { noticeId: In(visible.map((n) => n.id)), userId: callerUserId },
+    });
+    const readNoticeIds = new Set(readRows.map((r) => r.noticeId));
+
+    return visible.map((n) => this.toResponseDto(n, readNoticeIds.has(n.id)));
   }
 
   private async loadNoticeOrThrow(noticeId: string): Promise<Notice> {
@@ -120,29 +145,27 @@ export class NoticeBoardService {
     return notice;
   }
 
-  async markRead(noticeId: string, scope: TenantScope, userId: string): Promise<NoticeRead> {
+  async markRead(noticeId: string, scope: TenantScope, userId: string): Promise<NoticeReadResponseDto> {
     const notice = await this.loadNoticeOrThrow(noticeId);
     assertSocietyMatch(notice.societyId, scope);
 
     const existing = await this.reads.findOne({ where: { noticeId, userId } });
-    if (existing) return existing;
+    if (existing) return { noticeId: existing.noticeId, readAt: existing.readAt.toISOString() };
 
     const record = this.reads.create({ societyId: notice.societyId, noticeId, userId, readAt: new Date() });
     try {
-      return await this.reads.save(record);
+      const saved = await this.reads.save(record);
+      return { noticeId: saved.noticeId, readAt: saved.readAt.toISOString() };
     } catch (err) {
       if (err instanceof QueryFailedError) {
         const race = await this.reads.findOne({ where: { noticeId, userId } });
-        if (race) return race;
+        if (race) return { noticeId: race.noticeId, readAt: race.readAt.toISOString() };
       }
       throw err;
     }
   }
 
-  async readReport(
-    noticeId: string,
-    scope: TenantScope,
-  ): Promise<{ totalRecipients: number; readCount: number; readUserIds: string[] }> {
+  async readReport(noticeId: string, scope: TenantScope): Promise<NoticeReadReportResponseDto> {
     const notice = await this.loadNoticeOrThrow(noticeId);
     assertSocietyMatch(notice.societyId, scope);
 
